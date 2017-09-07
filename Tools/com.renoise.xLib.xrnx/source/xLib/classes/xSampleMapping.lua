@@ -12,8 +12,33 @@ Static methods for working with renoise sample mappings
 @{xInstrument}
 
 --]]
+--=================================================================================================
 
 class 'xSampleMapping'
+
+---------------------------------------------------------------------------------------------------
+-- a 'virtual' sample-mapping object, 
+
+function xSampleMapping:__init(...)
+
+  local args = cLib.unpack_args(...)
+
+  --self.read_only
+
+  -- renoise.Instrument.LAYER
+  self.layer = args.layer 
+  -- boolean 
+  self.map_velocity_to_volume = args.map_velocity_to_volume
+  -- boolean
+  self.map_key_to_pitch = args.map_velocity_to_volume
+  -- base_note, number (0-119, c-4=48)
+  self.base_note = args.base_note
+  -- note_range, table with two numbers (0-119, c-4=48)
+  self.note_range = args.note_range
+  -- velocity_range, table with two numbers (0-127)
+  self.velocity_range = args.velocity_range
+
+end
 
 ---------------------------------------------------------------------------------------------------
 -- [Static] Test if a given note is within the provided note-range 
@@ -27,20 +52,10 @@ function xSampleMapping.within_note_range(note,mapping)
 end
 
 ---------------------------------------------------------------------------------------------------
--- [Static] Shift samples by amount of semitones, starting from the sample index 
--- @param instr (renoise.Instrument)
--- @param sample_idx_from (int)
--- @param amt (int)
+-- [Static] test if sample mapping occupies the entire note-range
 
-function xSampleMapping.shift_keyzone_by_semitones(instr,sample_idx_from,amt)
-  TRACE("xSampleMapping.shift_keyzone_by_semitones(instr,sample_idx_from,amt)",instr,sample_idx_from,amt)
-
-  for sample_idx = sample_idx_from,#instr.samples do
-    local sample = instr.samples[sample_idx]
-    local smap = sample.sample_mapping
-    smap.base_note = smap.base_note+amt
-    smap.note_range = {smap.note_range[1]+amt, smap.note_range[2]+amt}
-  end
-
+function xSampleMapping.has_full_note_range(mapping)
+  return (mapping.note_range[1] == 0) 
+    and  (mapping.note_range[2] == 119)
 end
 
