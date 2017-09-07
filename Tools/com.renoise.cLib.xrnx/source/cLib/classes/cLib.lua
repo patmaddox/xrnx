@@ -15,9 +15,6 @@ therefore, it is recommended that any cLib-powered tool includes this file
 
 --=================================================================================================
 
-require (_clibroot.."cValue")
-require (_clibroot.."cNumber")
-
 class 'cLib'
 
 --- placeholder value for nil, storable in table.
@@ -177,7 +174,6 @@ end
 ---------------------------------------------------------------------------------------------------
 -- [Static] 'Wrap/rotate' value within specified range
 -- (with a range of 64-127, a value of 128 should output 65)
--- TODO use % modulo to obtain offset
 
 function cLib.wrap_value(value, min_value, max_value)
   local range = max_value - min_value + 1
@@ -191,6 +187,30 @@ function cLib.wrap_value(value, min_value, max_value)
   return value
 end
 
+---------------------------------------------------------------------------------------------------
+-- @param t (table of value)
+-- @param m (number, max value)
+-- @param n (number, items to iterate through)
+--[[
+function cLib.max_abs(t,m,n)
+  if (#t == 0) then 
+    return nil 
+  end   
+  if not tonumber(m) then 
+    m=1 
+  end
+  local value = math.abs(t[m])
+  if (n == nil or n >= #t) then 
+    n = #t 
+  end   
+  for i = m, n do
+    if (math.abs(value) < math.abs(t[i])) then
+      value =  math.abs(t[i])
+    end
+  end
+  return value
+end 
+]]
 ---------------------------------------------------------------------------------------------------
 -- [Static] Determine the sign of a number
 -- @return -1 if negative or 1 if positive
@@ -225,14 +245,31 @@ end
 ---------------------------------------------------------------------------------------------------
 -- [Static] Convert between note/hertz
 
-function cLib.note_to_hz(note)
+function cLib.note_to_hz(note,hz_ini)
   TRACE('cLib.note_to_hz(note)',note)
-  return math.pow(2, (note - 45) / 12) * 440;
+  hz_ini = hz_ini or 440
+  return math.pow(2, (note - 45) / 12) * hz_ini;
 end
 
-function cLib.hz_to_note(freq)
+function cLib.hz_to_note(freq,hz_ini)
   TRACE('cLib.hz_to_note(freq)',freq)
-  return (math.log(freq) - math.log(440)) / math.log(2) + 4;
+  hz_ini = hz_ini or 440
+  return (math.log(freq) - math.log(hz_ini)) / math.log(2) + 4;
+end
+
+---------------------------------------------------------------------------------------------------
+-- [Static] Note to frames - e.g. 48 (C-4) -> 169
+-- will only be fully reliable when hz and sample_rate is provided as well 
+
+function cLib.note_to_frames(note,sample_rate,hz_ini)
+  TRACE("cLib.note_to_frames()",note,sample_rate,hz_ini)
+  if not hz_ini then 
+    hz_ini=440 
+  end
+  if not sample_rate then 
+    sample_rate=44100 
+  end 
+  return cLib.round_value(((1/2)^((note-57)/12)) * (sample_rate/hz_ini))
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -273,6 +310,16 @@ end
 function cLib.round_value(num) 
   if num >= 0 then return math.floor(num+.5) 
   else return math.ceil(num-.5) end
+end
+
+---------------------------------------------------------------------------------------------------
+-- [Static] Round with precision (http://lua-users.org/wiki/SimpleRound)
+-- @param num (number)
+-- @param idp (number)
+
+function cLib.round_with_precision(num, idp)
+  local mult = 10 ^ (idp or 0)
+  return math.floor(num * mult + 0.5) / mult
 end
 
 ---------------------------------------------------------------------------------------------------
