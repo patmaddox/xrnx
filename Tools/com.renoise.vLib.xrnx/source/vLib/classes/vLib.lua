@@ -54,6 +54,9 @@ vLib.BITMAP_STYLES = {
 --- (number), standard height for controls
 vLib.CONTROL_H = 18
 
+-- (number), special value that nullifies spacing 
+vLib.NULL_SPACING = -3
+
 --------------------------------------------------------------------------------
 --- generate a unique string that you is used as viewbuilder id for widgets
 -- (avoids clashes in names between multiple instances of the same widget)
