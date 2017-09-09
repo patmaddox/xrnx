@@ -242,6 +242,8 @@ end
 function xSampleBuffer.get_bit_depth(buffer)
   TRACE("xSampleBuffer.get_bit_depth(buffer)",buffer)
 
+  assert(buffer.has_sample_data,"Sample buffer is empty")
+
   local function reverse(t)
     local nt = {}
     local size = #t + 1
@@ -265,30 +267,25 @@ function xSampleBuffer.get_bit_depth(buffer)
   -- Vars and crap
   local bit_depth = 0
   local sample_max = math.pow(2, 32) / 2
+  local channels = buffer.number_of_channels
+  local frames = buffer.number_of_frames
   
-  -- If we got some sample data to analyze
-  if (buffer.has_sample_data) then
-  
-    local channels = buffer.number_of_channels
-    local frames = buffer.number_of_frames
+  for f = 1, frames do
+    for c = 1, channels do
     
-    for f = 1, frames do
-      for c = 1, channels do
+      -- Convert float to 32-bit unsigned int
+      local s = (1 + buffer:sample_data(c, f)) * sample_max
       
-        -- Convert float to 32-bit unsigned int
-        local s = (1 + buffer:sample_data(c, f)) * sample_max
-        
-        -- Measure bits used
-        local bits = tobits(s)
-        for b = 1, #bits do
-          if bits[b] == 1 then
-            if b > bit_depth then
-              bit_depth = b
-            end
+      -- Measure bits used
+      local bits = tobits(s)
+      for b = 1, #bits do
+        if bits[b] == 1 then
+          if b > bit_depth then
+            bit_depth = b
           end
         end
-
       end
+
     end
   end
     
@@ -389,10 +386,7 @@ end
 function xSampleBuffer.detect_leading_trailing_silence(buffer,channels,threshold)
   TRACE("xSampleBuffer.detect_leading_trailing_silence(buffer,channels,threshold)",buffer,channels,threshold)
 
-  if not buffer.has_sample_data then
-    LOG("*** xSampleBuffer.detect_leading_trailing_silence - no sample data")
-    return 
-  end
+  assert(buffer.has_sample_data,"Sample buffer is empty")
 
   if not threshold then 
     threshold = 0
@@ -450,9 +444,7 @@ end
 function xSampleBuffer.is_silent(buffer,channels)
   TRACE("xSampleBuffer.is_silent(buffer,channels)",buffer,channels)
 
-  if not buffer.has_sample_data then
-    return 
-  end
+  assert(buffer.has_sample_data,"Sample buffer is empty")
 
   local frames = buffer.number_of_frames
 
@@ -492,9 +484,7 @@ end
 function xSampleBuffer.set_buffer_selection(buffer,sel_start,sel_end)
   TRACE("xSampleBuffer.set_buffer_selection()",buffer,sel_start,sel_end)
   
-  if not buffer.has_sample_data then  
-    return false,"Cannot select, sample buffer is empty"
-  end
+  assert(buffer.has_sample_data,"Sample buffer is empty")
 
   local min = 1
   local max = buffer.number_of_frames  
@@ -507,7 +497,46 @@ function xSampleBuffer.set_buffer_selection(buffer,sel_start,sel_end)
 end
 
 ---------------------------------------------------------------------------------------------------
+-- with small buffer sizes, not all offsets are valid 
+-- this method returns the "missing" and "filled" ones as separate tables
+-- @return table<number>, values between 0x00 - 0xFF 
+
+function xSampleBuffer.get_offset_indices(num_frames)
+  TRACE("xSampleBuffer.get_offset_indices(num_frames)",num_frames)
+
+  local unit = num_frames/256
+  local last_n = 0
+  local gaps,indices = {},{}
+  for k = 1,256 do
+    local val = unit*k
+    local n = cLib.round_value(val)
+    if (last_n == n) then 
+      table.insert(gaps,k)
+    else 
+      table.insert(indices,k)
+    end
+    last_n = n
+  end
+  return indices,gaps
+end
+
+---------------------------------------------------------------------------------------------------
+-- check for gaps, return first viable offset
+-- @param offset (number), between 0x00 and 0xFF
+-- @param reverse (boolean), match in reverse
+-- @return number 
+
+function xSampleBuffer.get_nearest_offset(num_frames,offset,reverse)
+  TRACE("xSampleBuffer.get_nearest_offset(num_frames,offset,reverse)",num_frames,offset,reverse)
+
+  local indices,_ = xSampleBuffer.get_offset_indices(num_frames)
+  return cTable.nearest(indices,offset)  
+
+end
+
+---------------------------------------------------------------------------------------------------
 -- get a "OS" offset by position in buffer 
+-- (NB: this method does not support/detect the Amiga/FT2 compatibility mode)
 -- @param buffer (renoise.SampleBuffer)
 -- @param frame (number)
 -- @return number or nil if out of bounds
@@ -515,33 +544,32 @@ end
 function xSampleBuffer.get_offset_by_frame(buffer,frame)
   TRACE("xSampleBuffer.get_offset_by_frame(buffer,frame)",buffer,frame)
 
-  if not buffer.has_sample_data then
-    return nil, "Sample has no data"
-  end
+  assert(buffer.has_sample_data,"Sample buffer is empty")
 
   if (frame <= 1) then 
     return 0 -- special case  
   end
 
-  local rslt 
-  
-  if (buffer.number_of_frames < 0x100) then 
+  local num_frames = buffer.number_of_frames
+  local offset 
+
+  if (num_frames < 0x100) then 
     -- handle small buffers differently 
-    local unit = 0x100/buffer.number_of_frames
-    rslt = (-1+frame)*unit
-    print("get_offset_by_frame - in,out",frame,rslt,("%x"):format(rslt))  
-    rslt = math.floor(rslt)
-  else
-    rslt = (frame/buffer.number_of_frames)*0x100
-    --print("get_offset_by_frame - in,out",frame,rslt,("%x"):format(rslt))  
-    rslt = cLib.round_value(rslt)
+    offset = (frame-1)*(0x100/buffer.number_of_frames)
+    --print("get_offset_by_frame - in,out",frame,offset,("%x"):format(offset))  
+    offset = xSampleBuffer.get_nearest_offset(num_frames,cLib.round_value(offset),true)
+  else 
+    offset = cLib.round_value((frame/num_frames)*0x100)
+    --print("get_offset_by_frame - in,out",frame,offset,("%x"):format(offset))  
   end 
-  return rslt
+
+  return offset
   
 end
 
 ---------------------------------------------------------------------------------------------------
 -- get a "OS" offset by position in buffer 
+-- (NB: this method does not support/detect the Amiga/FT2 compatibility mode)
 -- @param buffer (renoise.SampleBuffer)
 -- @param offset (number), between 0x00 and 0xFF
 -- @return number or nil if out of bounds
@@ -549,17 +577,22 @@ end
 function xSampleBuffer.get_frame_by_offset(buffer,offset)
   TRACE("xSampleBuffer.get_frame_by_offset(buffer,offset)",buffer,offset)
 
-  if not buffer.has_sample_data then
-    return nil, "Sample has no data"
-  end
+  assert(buffer.has_sample_data,"Sample buffer is empty")
 
   if (offset == 0) then
     return 1 -- special case
   end
 
-  local unit = buffer.number_of_frames/256
-  local frame = 1 + (offset * unit)
-  print("get_frame_by_offset - in,out",offset,cLib.round_value(frame),frame)
+  local num_frames = buffer.number_of_frames
+  if (num_frames < 0x100) then 
+    -- compensate for gaps in small samples 
+    offset = xSampleBuffer.get_nearest_offset(num_frames,offset)
+  end
+
+  local frame = 1+(offset*num_frames)/256
+  frame = math.min(frame,num_frames)
+
+  --print("get_frame_by_offset - in,out",offset,cLib.round_value(frame),frame)
   return cLib.round_value(frame)
 
 end
@@ -575,9 +608,7 @@ end
 function xSampleBuffer.get_frame_by_line(buffer,line,lpb,bpm)
   TRACE("xSampleBuffer.get_frame_by_line(buffer,line,lpb,bpm)",buffer,line,lpb,bpm)
 
-  if not buffer.has_sample_data then
-    return false, "Sample has no data"
-  end
+  assert(buffer.has_sample_data,"Sample buffer is empty")
 
   lpb = not lpb and rns.transport.lpb or lpb
   bpm = not bpm and rns.transport.bpm or bpm
@@ -620,10 +651,8 @@ function xSampleBuffer.get_beat_by_frame(buffer,frame,bpm)
 
   assert(type(buffer)=="SampleBuffer")
   assert(type(frame)=="number")
+  assert(buffer.has_sample_data,"Sample buffer is empty")
 
-  if not buffer.has_sample_data then
-    return false, "Sample has no data"
-  end
   bpm = not bpm and rns.transport.bpm or bpm
   return ((frame) / ((1 / rns.transport.bpm * 60) * buffer.sample_rate)) 
 
