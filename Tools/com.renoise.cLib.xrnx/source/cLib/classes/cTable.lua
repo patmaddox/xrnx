@@ -108,6 +108,44 @@ function cTable.match_key(t,key)
 end
 
 ---------------------------------------------------------------------------------------------------
+-- [Static] return nearest in table of values 
+-- @param t (table<number>) 
+-- @param val (number) 
+
+function cTable.nearest(t,val)
+  print("cTable.nearest(t,val)",t,val)
+
+  -- sort, but don't modify original table 
+  local vals = table.values(t)
+  table.sort(vals)
+
+  local prev
+  for k,v in ipairs(vals) do
+    if (v == val) then 
+      return v     
+    end 
+    if (v > val) then 
+      -- return first (lowest)
+      if not prev then 
+        return v
+      end 
+      -- shortest distance to prev/curr
+      local d_prev = math.abs(prev-val)
+      local d_curr = math.abs(v-val)
+      if (math.min(d_prev,d_curr) == d_prev) then
+        return prev
+      else
+        return v
+      end
+    end
+    prev = v
+  end
+
+  return prev
+
+end
+
+---------------------------------------------------------------------------------------------------
 -- [Static] Expand a multi-dimensional array with given keys
 -- @param t (table) 
 -- @param k1 (string) 
