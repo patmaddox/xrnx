@@ -1,7 +1,7 @@
 bitmap_util = function()
   local bitmap = {}
   bitmap.flick_range = "images/arrow-right.bmp"
-  bitmap.flick_range_back = "images/arrow-left.bmp"
+  bitmap.flick_back = "images/arrow-left.bmp"
   bitmap.sin_2pi = "images/wave-sine2.bmp"
   bitmap.saw = "images/wave-saw.bmp"
   bitmap.square = "images/wave-square.bmp"

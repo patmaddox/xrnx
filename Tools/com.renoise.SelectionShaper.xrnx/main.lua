@@ -26,8 +26,8 @@ local app = nil
 
 _trace_filters = {"^vButtonStrip*"}
 --_trace_filters = {"^SSK_Gui_Keyzone*"}
---_trace_filters = {".*"}
-_trace_filters = nil
+_trace_filters = {".*"}
+--_trace_filters = nil
 
 ---------------------------------------------------------------------------------------------------
 -- Include required files 
@@ -38,6 +38,7 @@ _xlibroot = 'source/xLib/classes/'
 
 require (_clibroot..'cLib')
 require (_clibroot..'cDebug')
+require (_clibroot..'cTable')
 require (_clibroot..'cString')
 require (_clibroot..'cReflection')
 require (_clibroot..'cWaveform')
@@ -94,7 +95,7 @@ end
 
 renoise.tool().app_new_document_observable:add_notifier(function()
   rns = renoise.song()
-  create() 
+  show() 
 end)
 
 ---------------------------------------------------------------------------------------------------
@@ -113,6 +114,7 @@ renoise.tool():add_menu_entry{
   end
 }
 
+--[[
 renoise.tool():add_keybinding {
   name = "Sample Editor:Selection Shaper:Flick range forward",
   invoke = function()
@@ -123,14 +125,13 @@ renoise.tool():add_keybinding {
 renoise.tool():add_keybinding {
   name = "Sample Editor:Selection Shaper:Flick range backward",
   invoke = function()
-    flick_range_back()
+    flick_back()
   end
 }
---[[
 renoise.tool():add_keybinding {
   name = "Sample Editor:Selection Shaper:Flickback and Setloop",
   invoke = function()
-    flick_range_back()
+    flick_back()
     set_loop()
   end
 }
@@ -145,3 +146,4 @@ renoise.tool():add_keybinding {
 
 --]]
 
+---------------------------------------------------------------------------------------------------

@@ -15,7 +15,7 @@ local prefs = renoise.tool().preferences
 
 --=================================================================================================
 
-class 'SSK_Gui'
+class 'SSK_Gui' (vDialog)
 
 SSK_Gui.DISPLAY_AS = {
   OS_EFFECT = 1,
@@ -23,8 +23,8 @@ SSK_Gui.DISPLAY_AS = {
   SAMPLES = 3,
 }
 
-SSK_Gui.COLOR_SELECTED = {0xf1,0x6a,0x32}
-SSK_Gui.COLOR_DESELECTED = {0x16,0x16,0x16}
+SSK_Gui.COLOR_SELECTED = {0xf1,0x6a,0x32} -- active in strip (same as waveform selection)
+SSK_Gui.COLOR_DESELECTED = {0x16,0x16,0x16} -- 
 SSK_Gui.COLOR_NONE = {0x00,0x00,0x00}
 
 
@@ -133,15 +133,17 @@ Input the number or the formula that represent the cycle of the wave.
 
 ---------------------------------------------------------------------------------------------------
 
-function SSK_Gui:__init(owner)
-  TRACE("SSK_Gui:__init(owner)",owner)
+function SSK_Gui:__init(...)
+  TRACE("SSK_Gui:__init(...)",...)
 
-  assert(type(owner) == "SSK")
+  local args = cLib.unpack_args(...)
+
+  assert(type(args.owner) == "SSK")
 
   -- Viewbuilder
   self.vb = renoise.ViewBuilder()
   -- SSK (SelectionShaper)
-  self.owner = owner 
+  self.owner = args.owner 
   -- Bitmap location table
   self.btmp = bitmap_util()
   -- boolean, scheduled updates
@@ -215,6 +217,12 @@ function SSK_Gui:__init(owner)
     self.update_strip_requested = true    
     self.update_selection_header_requested = true
   end)
+  self.owner.instrument_name_observable:add_notifier(function()
+    TRACE(">>> SSK_Gui:instrument_name_observable fired...")
+    self.update_toolbar_requested = true
+    self.update_selection_header_requested = true
+    self.update_strip_requested = true
+  end)
   self.owner.sample_index_observable:add_notifier(function()
     TRACE(">>> SSK_Gui:sample_index_observable fired...")
     -- update any controls that should be enabled or disabled
@@ -224,12 +232,15 @@ function SSK_Gui:__init(owner)
     self.update_modify_panel_requested = true
     self.update_generate_panel_requested = true
     self.update_selection_header_requested = true
+  end)  
+  self.owner.random_generated_observable:add_notifier(function()
+    self.update_generate_panel_requested = true
   end)
-  self.owner.instrument_name_observable:add_notifier(function()
-    TRACE(">>> SSK_Gui:instrument_name_observable fired...")
-    self.update_toolbar_requested = true
-    self.update_selection_header_requested = true
-    self.update_strip_requested = true
+  self.owner.recently_generated_observable:add_notifier(function()
+    self.update_generate_panel_requested = true
+  end)
+  prefs.auto_generate:add_notifier(function()
+    self.update_generate_panel_requested = true
   end)
 
   prefs.sync_with_renoise:add_notifier(function()
@@ -264,6 +275,10 @@ function SSK_Gui:__init(owner)
   renoise.tool().app_idle_observable:add_notifier(function()
     self:idle_notifier()
   end)
+
+  --== initialize ==--
+
+  vDialog.__init(...)
 
   
 end 
@@ -315,10 +330,10 @@ function SSK_Gui:key_handler(dlg,key)
   if (key.modifiers == "") then 
     -- pure keys (repeat allowed)
     if (key.name == "left") then 
-      self.owner:flick_range_back()
+      self.owner:flick_back()
       return
     elseif (key.name == "right") then
-      self.owner:flick_range_forward()
+      self.owner:flick_forward()
       return
     elseif (key.name == "up") then
       self.owner:selection_multiply_length()
@@ -404,8 +419,10 @@ function SSK_Gui:update_select_panel()
   self.vb.views.ssk_selection_unit_popup.active = is_active
   -- start 
   self.vb.views.ssk_get_selection_start.active = is_active and not sync_enabled
-  self.vb.views.ssk_get_selection_length.active = is_active and not sync_enabled
+  self.vb.views.ssk_selection_start.active = is_active
+  self.vb.views.ssk_selection_apply_start.active = is_active
   -- length 
+  self.vb.views.ssk_get_selection_length.active = is_active and not sync_enabled
   self.vb.views.ssk_selection_length.active = is_active
   self.vb.views.ssk_selection_apply_length.active = is_active
   self.vb.views.ssk_selection_multiply_length.active = is_active
@@ -420,7 +437,9 @@ function SSK_Gui:update_generate_panel()
   TRACE("SSK_Gui:update_generate_panel()")
 
   local is_active = self.owner:get_sample_buffer() and true or false
+  local can_repeat_rnd = self.owner.random_wave_fn and true or false
   self.vb.views.ssk_generate_random_bt.active = is_active
+  self.vb.views.ssk_generate_repeat_random_bt.active = is_active and can_repeat_rnd
   self.vb.views.ssk_generate_white_noise_bt.active = is_active
   self.vb.views.ssk_generate_brown_noise_bt.active = is_active
   self.vb.views.ssk_generate_violet_noise_bt.active = is_active
@@ -428,6 +447,20 @@ function SSK_Gui:update_generate_panel()
   self.vb.views.ssk_generate_saw_wave_bt.active = is_active
   self.vb.views.ssk_generate_square_wave_bt.active = is_active
   self.vb.views.ssk_generate_triangle_wave_bt.active = is_active
+
+  -- highlight recently generated 
+  local recent_sin = (self.owner.recently_generated == cWaveform.FORM.SIN)
+  local recent_saw = (self.owner.recently_generated == cWaveform.FORM.SAW)
+  local recent_square = (self.owner.recently_generated == cWaveform.FORM.SQUARE)
+  local recent_triangle = (self.owner.recently_generated == cWaveform.FORM.TRIANGLE)
+  self.vb.views.ssk_generate_sin_wave_bt.color = 
+    prefs.auto_generate.value and recent_sin and SSK_Gui.COLOR_SELECTED or SSK_Gui.COLOR_NONE
+  self.vb.views.ssk_generate_saw_wave_bt.color = 
+    prefs.auto_generate.value and recent_saw and SSK_Gui.COLOR_SELECTED or SSK_Gui.COLOR_NONE
+  self.vb.views.ssk_generate_square_wave_bt.color = 
+    prefs.auto_generate.value and recent_square and SSK_Gui.COLOR_SELECTED or SSK_Gui.COLOR_NONE
+  self.vb.views.ssk_generate_triangle_wave_bt.color = 
+    prefs.auto_generate.value and recent_triangle and SSK_Gui.COLOR_SELECTED or SSK_Gui.COLOR_NONE
 
 end
 
@@ -536,6 +569,7 @@ function SSK_Gui:update_buffer_controls()
   self.vb.views.ssk_buffer_copy_to_new.active = buffer
   self.vb.views.ssk_buffer_paste.active = buffer and memorized
   self.vb.views.ssk_buffer_mix_paste.active = buffer and memorized
+  self.vb.views.ssk_buffer_swap.active = buffer and memorized
 
 end
 
@@ -555,7 +589,7 @@ function SSK_Gui:update_selection_strip_controls()
   loop_bt.text = self.display_buffer_as_loop and "Clr.Loop" or "Set Loop"
   loop_bt.tooltip = self.display_buffer_as_loop and
     "Click to remove the currently set loop"
-    or "Click to loop the currently selected region"
+    or "Click to loop the selected region"
 
   --== update channel toggle-buttons ==--
 
@@ -1100,7 +1134,7 @@ function SSK_Gui:build_buffer_panel()
               width = SSK_Gui.SMALL_BT_WIDTH,    
               tooltip = "Flick the selection range leftward.",      
               notifier = function()
-                self.owner:flick_range_back()
+                self.owner:flick_back()
               end,          
             },
             self.vb:button{
@@ -1109,7 +1143,7 @@ function SSK_Gui:build_buffer_panel()
               width = SSK_Gui.SMALL_BT_WIDTH,
               tooltip = "Flick the selection range rightward.",
               notifier = function()
-                self.owner:flick_range_forward()
+                self.owner:flick_forward()
               end,          
             },
           },
@@ -1158,7 +1192,7 @@ function SSK_Gui:build_buffer_panel()
       self.vb:button{
         id = "ssk_buffer_trim",
         text = "Trim",
-        tooltip = "Trim sample to the selected area.",
+        tooltip = "Trim sample to the selected range.",
         notifier = function(x)
           self.owner:trim()
         end
@@ -1166,7 +1200,7 @@ function SSK_Gui:build_buffer_panel()
       self.vb:button{
         id = "ssk_buffer_copy",
         text = "Copy",
-        tooltip = "Memorize the waveform in a selection area.",
+        tooltip = "Memorize the waveform in a selection range.",
         notifier = function(x)
           self.owner:buffer_memorize()
         end
@@ -1182,7 +1216,7 @@ function SSK_Gui:build_buffer_panel()
       self.vb:button{
         id = "ssk_buffer_paste",
         text = 'Paste',
-        tooltip = "Redraw the memorized (clipped) waveform to the selected area.",
+        tooltip = "Redraw the memorized (clipped) waveform to the selected range.",
         notifier =
         function(x)
           self.owner:buffer_redraw()
@@ -1191,10 +1225,19 @@ function SSK_Gui:build_buffer_panel()
       self.vb:button{
         id = "ssk_buffer_mix_paste",
         text = 'Mix-Paste',
-        tooltip = "Mix the memorized (clipped) waveform with the selected area.",
+        tooltip = "Mix the memorized (clipped) waveform with the selected range.",
         notifier =
         function(x)
           self.owner:buffer_mixdraw()
+        end
+      },        
+      self.vb:button{
+        id = "ssk_buffer_swap",
+        text = 'Swap',
+        tooltip = "Swap the memorized (clipped) waveform with the selected range.",
+        notifier =
+        function(x)
+          self.owner:buffer_swap()
         end
       },        
     },  
@@ -1240,9 +1283,6 @@ function SSK_Gui:build_selection_panel()
           "Samples",
         },
         bind = prefs.display_selection_as,
-        --notifier = function(idx)
-        --  prefs.display_selection_as.value = idx
-        --end
       }        
     },
     
@@ -1272,64 +1312,92 @@ function SSK_Gui:build_generate_panel()
     },
     self:build_panel_header("Generate",function()
     end,prefs.display_generate_panel),
-    self.vb:row{
+    self.vb:column{
       id = "ssk_generate_panel",
       visible = false,
-      spacing = SSK_Gui.NULL_SPACING,
-      self.vb:column{
-        spacing = SSK_Gui.NULL_SPACING,
+      self.vb:row{
         self.vb:text{
           width = SSK_Gui.LABEL_WIDTH,
           text = "Random",
-          align = "center",
         },
         self.vb:button{
           id = "ssk_generate_random_bt",
-          --bitmap = self.btmp.random_wave,
-          --width = 80,
-          --height = 80,
           bitmap = self.btmp.run_random,
           width = SSK_Gui.WIDE_BT_WIDTH,
           height = SSK_Gui.TALL_BT_HEIGHT,
           text = 'Random',
-          tooltip = "Make random waves",
-          notifier = function(x)
+          tooltip = "Apply random waves to the selected range",
+          notifier = function()
             self.owner:random_wave()
           end
         },
+        self.vb:button{
+          id = "ssk_generate_repeat_random_bt",
+          width = SSK_Gui.WIDE_BT_WIDTH,
+          height = SSK_Gui.TALL_BT_HEIGHT,
+          text = "Repeat",
+          tooltip = "Apply the last generated random wave to the selected range",
+          notifier = function()
+            self.owner:repeat_random_wave()
+          end
+        },
       },
-      self.vb:column{
-        spacing = SSK_Gui.NULL_SPACING,
+      self.vb:row{
         self.vb:text{
           width = SSK_Gui.LABEL_WIDTH,
           text = "Noise",
-          align = "center",
         },
         self:build_white_noise(),
         self:build_brown_noise(), 
         self:build_violet_noise(), 
         --self:build_pink_noise(),
       },
-      self.vb:column{
-        spacing = SSK_Gui.NULL_SPACING,
+      self.vb:row{
+        --spacing = SSK_Gui.NULL_SPACING,
         self.vb:text{
           width = SSK_Gui.LABEL_WIDTH,
           text = "Wave",
-          align = "center",
         },
         self:build_sin_2pi(),
         self:build_saw_wave(),
         self:build_square_wave(),
         self:build_triangle_wave(), 
       },
-      self.vb:column{
-        self:build_band_limited_check(),    
-        self:build_cycle_shift_set(),
+      self.vb:space{
+        height = SSK_Gui.ITEM_SPACING,
+      },
+      self.vb:row{
         self.vb:space{
-          height = SSK_Gui.ITEM_SPACING,
+          width = 20,
+        },
+        self.vb:column{
+          self.vb:row{
+            self.vb:checkbox{
+              id = 'ssk_auto_generate',
+              bind = prefs.auto_generate,
+            },
+            self.vb:text{
+              text = "Apply changes in real-time",
+              width = SSK_Gui.LABEL_WIDTH,
+            },  
+          },         
+          self.vb:row{
+            self.vb:checkbox{
+              id = 'band_limited',
+              bind = prefs.band_limited,
+            },
+            self.vb:text{
+              text = "Band-limiting",
+              width = SSK_Gui.LABEL_WIDTH,
+            },  
+          }, 
+          self:build_cycle_shift_set(),
         },
         self:build_duty_cycle(), 
       },
+      self.vb:space{
+        height = SSK_Gui.ITEM_SPACING,
+      },      
     },
   }
 
@@ -1782,23 +1850,6 @@ function SSK_Gui:build_triangle_wave()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Band limiting check box
-
-function SSK_Gui:build_band_limited_check()
-
-  return self.vb:row{
-    self.vb:checkbox{
-      id = 'band_limited',
-      bind = prefs.band_limited,
-    },
-    self.vb:text{
-      text = "Band-limiting",
-      width = SSK_Gui.LABEL_WIDTH,
-    },  
-  }
-end 
-
----------------------------------------------------------------------------------------------------
 -- Wave modulating values input
 
 function SSK_Gui:build_cycle_shift_set()
@@ -1817,7 +1868,7 @@ function SSK_Gui:build_cycle_shift_set()
         notifier = function(x)
           local xx = cReflection.evaluate_string(x)
           if xx == nil then
-            local msg = 
+            local msg = SSK_Gui.MSG_MOD_CYCLE
             renoise.app():show_error(msg)
           else
             self.owner.mod_cycle = xx
@@ -1974,7 +2025,7 @@ function SSK_Gui:build_white_noise()
     bitmap = self.btmp.white_noise,
     tooltip = "White noise",
     notifier = function()
-      self.owner:make_wave(cWaveform.white_noise_fn)
+      self.owner:generate_white_noise()
     end,
   }
 end
@@ -1990,7 +2041,7 @@ function SSK_Gui:build_brown_noise()
     bitmap = self.btmp.brown_noise,
     tooltip = "Brown noise",
     notifier = function()
-      self.owner:make_wave(cWaveform.brown_noise_fn)
+      self.owner:generate_brown_noise()    
     end,
   }
 end 
@@ -2006,7 +2057,7 @@ function SSK_Gui:build_violet_noise()
     bitmap = self.btmp.violet_noise,
     tooltip = "Violet noise",
     notifier = function()
-      self.owner:make_wave(cWaveform.violet_noise_fn)
+      self.owner:generate_violet_noise()    
     end,
   }
 end 

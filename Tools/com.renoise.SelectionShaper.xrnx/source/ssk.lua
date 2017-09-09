@@ -10,12 +10,18 @@ Main class for the SSK tool
 
 --=================================================================================================
 
+-- allow access through static methods
 local _prefs_ = nil
 
 ---------------------------------------------------------------------------------------------------
 
 class 'SSK'
 
+-- utility table for channel selecting
+SSK.CH_UTIL = {
+  {0,0,{{1,1},1}}, -- mono,selected_channel is 3
+  {{{1,2},1},{{2,1},1},{{1,2},2}}, -- stereo
+}
 
 function SSK:__init(prefs)
 
@@ -23,8 +29,6 @@ function SSK:__init(prefs)
 
   -- SSK_Prefs
   self.prefs = prefs
-
-  -- also allow access through static methods
   _prefs_ = prefs
 
   -- Renoise.Instrument, currently targeted (can be nil)
@@ -46,10 +50,13 @@ function SSK:__init(prefs)
   self.sel_start_frames_observable = renoise.Document.ObservableNumber(0)
   self.sel_length_frames = property(self.get_sel_length_frames,self.set_sel_length_frames)
   self.sel_length_frames_observable = renoise.Document.ObservableNumber(0)
-  -- beats/offset are derived from frames   
+  -- beats are derived from frames   
   self.sel_start_beats = 0
-  self.sel_start_offset = 0
   self.sel_length_beats = 0
+  -- TODO derive offsets from user-specified values 
+  -- (those values are not changed as a result of programmatically changing the selection, 
+  -- only when changed manually in the waveform editor)
+  self.sel_start_offset = 0
   self.sel_length_offset = 0
 
   -- fired when the range has changed
@@ -65,6 +72,10 @@ function SSK:__init(prefs)
   self.mod_fn = nil
   self.mod_fade_fn = nil
 
+  -- function, last random generator (for re-use)
+  self.random_wave_fn = nil 
+  self.random_generated_observable = renoise.Document.ObservableBang()  
+
   -- mod_shift:[-1,1]
   self.mod_cycle = cReflection.evaluate_string(self.prefs.mod_cycle.value)
   -- mod_fade_shift:[-1,1]
@@ -74,8 +85,18 @@ function SSK:__init(prefs)
   self.clip_wv_fn = nil
   self.memorized_changed_observable = renoise.Document.ObservableBang()
 
+  -- cWaveform.FORM, last selected wave generator (0 means none)
+  self.recently_generated = property(self.get_recently_generated,self.set_recently_generated)
+  self.recently_generated_observable = renoise.Document.ObservableNumber(0)
+
+  -- boolean, true when the waveform should update
+  self.update_wave_requested = false
+
   -- SSK_Gui
-  self.ui = SSK_Gui(self)
+  self.ui = SSK_Gui{
+    owner = self,
+    waiting_to_show_dialog = true,
+  }
 
   -- SSK_Dialog_Create
   self.create_dialog = SSK_Dialog_Create{
@@ -102,6 +123,12 @@ function SSK:__init(prefs)
   self.buffer_changed_observable:add_notifier(function()
     self:attach_to_sample()
   end)
+
+  renoise.tool().app_idle_observable:add_notifier(function()
+    self:idle_notifier()
+  end)
+
+  self:attach_realtime_methods()
 
   -- == Initialize ==
 
@@ -137,24 +164,19 @@ function SSK:set_sel_length_frames(val)
   self.sel_length_frames_observable.value = val
 end 
 
+---------------------------------------------------------------------------------------------------
+
+function SSK:get_recently_generated()
+  return self.recently_generated_observable.value
+end 
+
+function SSK:set_recently_generated(val)
+  self.recently_generated_observable.value = val
+end 
+
 
 ---------------------------------------------------------------------------------------------------
 -- Class methods 
----------------------------------------------------------------------------------------------------
-
-function SSK:display_selection_as_os_fx()
-  return (self.prefs.display_selection_as.value == SSK_Gui.DISPLAY_AS.OS_EFFECT) 
-end
-
-function SSK:display_selection_as_beats()
-  return (self.prefs.display_selection_as.value == SSK_Gui.DISPLAY_AS.BEATS) 
-end
-
-function SSK:display_selection_as_samples()
-  return (self.prefs.display_selection_as.value == SSK_Gui.DISPLAY_AS.SAMPLES) 
-end
-
-
 ---------------------------------------------------------------------------------------------------
 -- delete selected sample 
 
@@ -177,154 +199,38 @@ function SSK:insert_sample()
 end
 
 ---------------------------------------------------------------------------------------------------
--- Generators 
----------------------------------------------------------------------------------------------------
--- Create random waveform 
+-- Generate sample data from a function
+-- @return boolean (true when created)
 
-function SSK:random_wave()
-  TRACE("SSK:random_wave()")
+function SSK:make_wave(fn,mod_fn)
+  print("SSK:make_wave(fn,mod_fn)",fn,mod_fn)
 
-  local range = self:get_selection_range()
-  self:make_wave(cWaveform.random_wave(range))
+  local buffer = self:get_sample_buffer() 
+  if not buffer then 
+    return 
+  end 
 
-  -- 1/10th chance of additional spice 
-  if (math.random() < 0.1) then
-    local max = math.random(3)
-    for i = 1,max do
-      self:make_wave(cWaveform.random_copy_fn(range))
-    end
-  end
+  local bop = xSampleBufferOperation{
+    instrument_index = self.instrument_index,
+    sample_index = self.sample_index,
+    restore_selection = true,
+    restore_loop = true,    
+    restore_zoom = true,    
+    operations = {
+      xSampleBuffer.create_wave_fn{
+        buffer=buffer,
+        fn=fn,
+        mod_fn=mod_fn,
+      },
+    },
+    on_complete = function(new_buffer)
+      TRACE("[make_wave] process_done - new_buffer",new_buffer)
+
+    end 
+  }
+  bop:run()
 
 end
-
----------------------------------------------------------------------------------------------------
-
-function SSK:generate_sine_wave()
-  self.wave_fn = cWaveform.wave_fn(cWaveform.FORM.SIN,
-    self.mod_cycle,
-    self.prefs.mod_shift.value/100,
-    self.prefs.mod_duty_onoff.value,
-    self.prefs.mod_duty.value,
-    self.prefs.mod_duty_var.value,
-    self.prefs.mod_duty_var_frq.value,
-    self.prefs.band_limited.value,
-    self:get_selection_range())
-  self.mod_fn = self:make_wave(self.wave_fn,self.mod_fn)
-end 
-
----------------------------------------------------------------------------------------------------
-
-function SSK:generate_saw_wave()
-  self.wave_fn = cWaveform.wave_fn(cWaveform.FORM.SAW,
-    self.mod_cycle,
-    self.prefs.mod_shift.value/100,
-    self.prefs.mod_duty_onoff.value,
-    self.prefs.mod_duty.value,
-    self.prefs.mod_duty_var.value,
-    self.prefs.mod_duty_var_frq.value,
-    self.prefs.band_limited.value,
-    self:get_selection_range())
-  self.mod_fn = self:make_wave(self.wave_fn,self.mod_fn)
-end 
-
----------------------------------------------------------------------------------------------------
-
-function SSK:generate_square_wave()
-  self.wave_fn = cWaveform.wave_fn(cWaveform.FORM.SQUARE,
-    self.mod_cycle,
-    self.prefs.mod_shift.value/100,
-    self.prefs.mod_duty_onoff.value,
-    self.prefs.mod_duty.value,
-    self.prefs.mod_duty_var.value,
-    self.prefs.mod_duty_var_frq.value,
-    self.prefs.band_limited.value,
-    self:get_selection_range())
-  self.mod_fn = self:make_wave(self.wave_fn,self.mod_fn)
-end 
-
----------------------------------------------------------------------------------------------------
-
-function SSK:generate_triangle_wave()
-  self.wave_fn = cWaveform.wave_fn(cWaveform.FORM.TRIANGLE,
-    self.mod_cycle,
-    self.prefs.mod_shift.value/100,
-    self.prefs.mod_duty_onoff.value,
-    self.prefs.mod_duty.value,
-    self.prefs.mod_duty_var.value,
-    self.prefs.mod_duty_var_frq.value,
-    self.prefs.band_limited.value,
-    self:get_selection_range())
-  self.mod_fn = self:make_wave(self.wave_fn,self.mod_fn)
-
-end 
-
----------------------------------------------------------------------------------------------------
-
-function SSK:fade_mod_sin()
-  self.mod_fade_fn = cWaveform.mod_fn_fn(
-    self.mod_fade_cycle,
-    self.prefs.mod_fade_shift.value,
-    self.prefs.mod_pd_duty_onoff.value,
-    self.prefs.mod_pd_duty.value,
-    self.prefs.mod_pd_duty_var.value,
-    self.prefs.mod_pd_duty_var_frq.value)
-  self:set_fade(cWaveform.sin_2pi_fn,self.mod_fade_fn)
-end 
-
----------------------------------------------------------------------------------------------------
-
-function SSK:fade_mod_saw()
-  self.mod_fade_fn = cWaveform.mod_fn_fn(
-    self.mod_fade_cycle,
-    self.prefs.mod_fade_shift.value,
-    self.prefs.mod_pd_duty_onoff.value,
-    self.prefs.mod_pd_duty.value,
-    self.prefs.mod_pd_duty_var.value,
-    self.prefs.mod_pd_duty_var_frq.value)
-  self:set_fade(cWaveform.saw_fn,self.mod_fade_fn)
-end 
-
----------------------------------------------------------------------------------------------------
-
-function SSK:fade_mod_square()
-  self.mod_fade_fn = cWaveform.mod_fn_fn(
-    self.mod_fade_cycle,
-    self.prefs.mod_fade_shift.value,
-    self.prefs.mod_pd_duty_onoff.value,
-    self.prefs.mod_pd_duty.value,
-    self.prefs.mod_pd_duty_var.value,
-    self.prefs.mod_pd_duty_var_frq.value)
-  self:set_fade(cWaveform.square_fn,self.mod_fade_fn)
-end 
-
----------------------------------------------------------------------------------------------------
-
-function SSK:fade_mod_triangle()
-  self.mod_fade_fn = cWaveform.mod_fn_fn(
-    self.mod_fade_cycle,
-    self.prefs.mod_fade_shift.value,
-    self.prefs.mod_pd_duty_onoff.value,
-    self.prefs.mod_pd_duty.value,
-    self.prefs.mod_pd_duty_var.value,
-    self.prefs.mod_pd_duty_var_frq.value)
-  self:set_fade(cWaveform.triangle_fn,self.mod_fade_fn)
-end 
-
----------------------------------------------------------------------------------------------------
-
-function SSK:pd_copy()  
-  local buffer = self:get_sample_buffer() 
-  local mod = cWaveform.mod_fn_fn(
-    self.mod_fade_cycle,
-    self.prefs.mod_fade_shift.value,
-    self.prefs.mod_pd_duty_onoff.value,
-    self.prefs.mod_pd_duty.value,
-    self.prefs.mod_pd_duty_var.value,
-    self.prefs.mod_pd_duty_var_frq.value)
-  local fn = xSampleBuffer.copy_fn_fn(
-    self.buffer,nil,buffer.selection_start,buffer.selection_end)
-  self:make_wave(fn,mod)
-end 
 
 ---------------------------------------------------------------------------------------------------
 -- Buffer operations
@@ -343,12 +249,7 @@ function SSK:copy_to_new()
   local init_range = xSampleBuffer.get_selection_range(buffer)
   local init_selected_channel = buffer.selected_channel
 
-  -- utility table for channel selecting
-  local ch_util = {
-    {0,0,{{1,1},1}}, -- mono,selected_channel is 3
-    {{{1,2},1},{{2,1},1},{{1,2},2}}, -- stereo
-  }
-  local ch_tbl = ch_util[buffer.number_of_channels][init_selected_channel]
+  local ch_tbl = SSK.CH_UTIL[buffer.number_of_channels][init_selected_channel]
 
   local do_process = function(new_buffer)
     local offset = buffer.selection_start-1
@@ -413,6 +314,127 @@ function SSK:buffer_mixdraw()
 end 
 
 ---------------------------------------------------------------------------------------------------
+-- swap the memorized buffer with the selected region 
+
+function SSK:buffer_swap()
+  TRACE("SSK:buffer_swap()")
+  local buffer = self:get_sample_buffer()
+  if self.clip_wv_fn and buffer then
+    
+    -- TODO 
+    -- first step: needs to memorize the clipped range 
+    
+    -- refuse if clipped range overlaps current selection 
+
+    --[[
+    local ch_tbl = SSK.CH_UTIL[buffer.number_of_channels][init_selected_channel]
+    local do_process = function(new_buffer)
+      local offset = buffer.selection_start-1
+      for ch = 1,ch_tbl[2] do
+        -- clipped range? insert selected frames... 
+        -- selected frames? insert clipped data 
+        -- pass through before 
+        for fr = 1,init_range do
+        end
+      end
+    end
+
+    local bop = xSampleBufferOperation{
+      instrument_index = self.instrument_index,
+      sample_index = self.sample_index,
+      --force_frames = range,
+      restore_selection = true,
+      operations = {
+        do_process,
+      },
+      on_complete = function(_bop_)
+        -- select the clipped range 
+      end
+    }
+    bop:run()
+    ]]
+    
+  end
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:sweep_ins()
+  TRACE("SSK:sweep_ins()")
+
+  local buffer = self:get_sample_buffer()           
+  if not buffer then 
+    return 
+  end
+
+  local bop = xSampleBufferOperation{
+    instrument_index = self.instrument_index,
+    sample_index = self.sample_index,
+    restore_selection = true,
+    restore_loop = true,
+    restore_zoom = true,
+    operations = {
+      xSampleBuffer.sweep_ins{
+        buffer=buffer
+      },
+    },
+    on_complete = function()
+      TRACE("[sweep_ins] process_done")
+    end    
+  }
+
+  bop:run()
+
+end
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:sync_del()
+  TRACE("SSK:sync_del()")
+
+  local buffer = self:get_sample_buffer()           
+  if not buffer then 
+    return 
+  end
+
+  local bop = xSampleBufferOperation{
+    instrument_index = self.instrument_index,
+    sample_index = self.sample_index,
+    restore_selection = true,
+    restore_loop = true,        
+    restore_zoom = true,        
+    operations = {
+      xSampleBuffer.sync_del{
+        buffer=buffer
+      },
+    },
+    on_complete = function()
+      TRACE("[sync_del] process_done")
+    end    
+  }
+
+  bop:run()
+
+end
+
+
+---------------------------------------------------------------------------------------------------
+-- Selection methods 
+---------------------------------------------------------------------------------------------------
+
+function SSK:display_selection_as_os_fx()
+  return (self.prefs.display_selection_as.value == SSK_Gui.DISPLAY_AS.OS_EFFECT) 
+end
+
+function SSK:display_selection_as_beats()
+  return (self.prefs.display_selection_as.value == SSK_Gui.DISPLAY_AS.BEATS) 
+end
+
+function SSK:display_selection_as_samples()
+  return (self.prefs.display_selection_as.value == SSK_Gui.DISPLAY_AS.SAMPLES) 
+end
+
+---------------------------------------------------------------------------------------------------
 -- @return number or nil 
 
 function SSK:get_selection_range()
@@ -448,207 +470,6 @@ function SSK:get_sample_buffer()
     return xSample.get_sample_buffer(self.sample)
   end
 end 
-
----------------------------------------------------------------------------------------------------
--- Generate sample data from a function
--- @return boolean (true when created)
-
-function SSK:make_wave(fn,mod_fn)
-  print("SSK:make_wave(fn,mod_fn)",fn,mod_fn)
-
-  local buffer = self:get_sample_buffer() 
-  if not buffer then 
-    return 
-  end 
-
-  local bop = xSampleBufferOperation{
-    instrument_index = self.instrument_index,
-    sample_index = self.sample_index,
-    restore_selection = true,
-    restore_loop = true,    
-    operations = {
-      xSampleBuffer.create_wave_fn{
-        buffer=buffer,
-        fn=fn,
-        mod_fn=mod_fn,
-      },
-    },
-    on_complete = function(new_buffer)
-      TRACE("[make_wave] process_done - new_buffer",new_buffer)
-
-    end 
-  }
-  bop:run()
-
-end
-
-
----------------------------------------------------------------------------------------------------
--- Modifiers
----------------------------------------------------------------------------------------------------
-
-function SSK:trim()
-  TRACE("SSK:trim(ratio)")
-
-  local buffer = self:get_sample_buffer() 
-  if not buffer then 
-    return
-  end 
-
-  local range = xSampleBuffer.get_selection_range(buffer)
-
-  local bop = xSampleBufferOperation{
-    instrument_index = self.instrument_index,
-    sample_index = self.sample_index,
-    force_frames = range,
-    restore_selection = false,
-    operations = {
-      xSampleBuffer.trim{
-        buffer=buffer,
-      },
-    },
-    on_complete = function(_bop_)
-      -- select/loop everything 
-      local sample = _bop_.sample
-      xSample.set_loop_all(sample)
-      xSampleBuffer.select_all(sample.sample_buffer)
-    end
-  }
-  bop:run()
-
-end
-
-
----------------------------------------------------------------------------------------------------
-
-function SSK:phase_shift_with_ratio(ratio)
-  TRACE("SSK:phase_shift_with_ratio(ratio)",ratio)
-
-  local buffer = self:get_sample_buffer() 
-  if buffer then 
-    local range = xSampleBuffer.get_selection_range(buffer)
-    self:phase_shift_fine(range*ratio)
-  end 
-
-end
-
----------------------------------------------------------------------------------------------------
-
-function SSK:phase_shift_fine(frame)
-  TRACE("SSK:phase_shift_fine(frame)",frame)
-
-  local buffer = self:get_sample_buffer() 
-  if not buffer then 
-    return 
-  end 
-
-  local on_complete = function()
-    TRACE("[SSK:phase_shift_with_ratio] on_complete - ")
-  end    
-
-  local bop = xSampleBufferOperation{
-    instrument_index = self.instrument_index,
-    sample_index = self.sample_index,
-    restore_selection = true,
-    restore_loop = true,
-    operations = {
-      xSampleBuffer.phase_shift{
-        buffer=buffer,
-        frame=frame,
-      },
-    }
-  }
-  bop:run()
-
-end
-
----------------------------------------------------------------------------------------------------
--- apply fade operation to buffer 
--- @param fn 
-
-function SSK:set_fade(fn,mod_fn)
-  TRACE("SSK:set_fade(fn,mod_fn)",fn,mod_fn)
-  local buffer = self:get_sample_buffer() 
-  if buffer then 
-
-    local bop = xSampleBufferOperation{
-      instrument_index = self.instrument_index,
-      sample_index = self.sample_index,
-      restore_selection = true,
-      restore_loop = true,
-      operations = {
-        xSampleBuffer.set_fade{
-          buffer=buffer,
-          fn=fn,
-          mod_fn=mod_fn,
-        }
-      },
-      on_complete = function()
-        TRACE("[set_fade] process_done")
-      end
-    }
-    bop:run()
-
-  end 
-end
-
----------------------------------------------------------------------------------------------------
-
-function SSK:sweep_ins()
-  TRACE("SSK:sweep_ins()")
-
-  local buffer = self:get_sample_buffer()           
-  if not buffer then 
-    return 
-  end
-
-  local bop = xSampleBufferOperation{
-    instrument_index = self.instrument_index,
-    sample_index = self.sample_index,
-    restore_selection = true,
-    restore_loop = true,
-    operations = {
-      xSampleBuffer.sweep_ins{
-        buffer=buffer
-      },
-    },
-    on_complete = function()
-      TRACE("[sweep_ins] process_done")
-    end    
-  }
-
-  bop:run()
-
-end
-
----------------------------------------------------------------------------------------------------
-
-function SSK:sync_del()
-  TRACE("SSK:sync_del()")
-
-  local buffer = self:get_sample_buffer()           
-  if not buffer then 
-    return 
-  end
-
-  local bop = xSampleBufferOperation{
-    instrument_index = self.instrument_index,
-    sample_index = self.sample_index,
-    restore_selection = true,
-    restore_loop = true,        
-    operations = {
-      xSampleBuffer.sync_del{
-        buffer=buffer
-      },
-    },
-    on_complete = function()
-      TRACE("[sync_del] process_done")
-    end    
-  }
-
-  bop:run()
-
-end
 
 ---------------------------------------------------------------------------------------------------
 -- extend the selected range by the specified amount 
@@ -743,8 +564,8 @@ end
 ---------------------------------------------------------------------------------------------------
 -- @return boolean 
 
-function SSK:flick_range_forward()
-  TRACE("SSK:flick_range_forward()")
+function SSK:flick_forward()
+  TRACE("SSK:flick_forward()")
 
   local buffer = self:get_sample_buffer() 
   if not buffer then 
@@ -778,8 +599,8 @@ end
 -- move selected region backwards, while inserting frames when needed
 -- @return boolean 
 
-function SSK:flick_range_back()
-  TRACE("SSK:flick_range_back()")
+function SSK:flick_back()
+  TRACE("SSK:flick_back()")
 
   local buffer = self:get_sample_buffer() 
   if not buffer then 
@@ -794,7 +615,7 @@ function SSK:flick_range_back()
     new_end = xSampleBuffer.get_frame_by_offset(buffer,self.sel_start_offset) - 1
   else 
     new_start = buffer.selection_start - range
-    new_end = new_start-1
+    new_end = new_start+range-1
   end 
 
   print("flick back - new_start,new_end",new_start,new_end)
@@ -803,7 +624,7 @@ function SSK:flick_range_back()
     buffer.selection_range = {new_start,new_end}
   else
     -- change buffer
-    local extend_by = -range+new_start-1
+    local extend_by = new_start-1
     local total_frames = buffer.number_of_frames + math.abs(extend_by)
 
     local loop_start = self.sample.loop_start
@@ -821,7 +642,7 @@ function SSK:flick_range_back()
       },
       on_complete = function(_bop_)
         local sample = _bop_.sample
-        TRACE("SSK:flick_range_back - process_done...sample",sample)
+        TRACE("SSK:flick_back - process_done...sample",sample)
         buffer.selection_range = {1,range}
         -- preserve/shift loop points 
         loop_start = loop_start+math.abs(extend_by)
@@ -847,6 +668,7 @@ function SSK:obtain_sel_start_from_editor()
     self.sel_start_frames = buffer.selection_start
     self.sel_start_beats = self:get_beats_from_frame(buffer.selection_start)
     self.sel_start_offset = self:get_offset_from_frame(buffer.selection_start)
+    print(">>> self.sel_start_offset",self.sel_start_offset)
   end 
 
 end
@@ -869,7 +691,9 @@ function SSK:obtain_sel_length_from_editor()
     local range = xSampleBuffer.get_selection_range(buffer)
     self.sel_length_frames = xSampleBuffer.get_selection_range(buffer)
     self.sel_length_beats = self:get_beats_from_frame(range)
+    print(">>> self:obtain_sel_end_offset(buffer)",self:obtain_sel_end_offset(buffer))
     self.sel_length_offset = self:obtain_sel_end_offset(buffer)-self.sel_start_offset
+    print(">>> self.sel_length_offset",self.sel_length_offset)
     --self.sel_length_offset = self:get_offset_from_frame(sel_length_offset)
   end 
 
@@ -953,7 +777,7 @@ function SSK:interpret_selection_input(str,is_start)
 end
 
 ---------------------------------------------------------------------------------------------------
--- syncで変わるビートの割合を計算
+-- obtain the length in beats when sample is beat-synced
 
 function SSK:beat_unit_with_sync()
   TRACE("SSK:beat_unit_with_sync()")
@@ -981,6 +805,318 @@ function SSK:beat_unit_with_base_tune()
     return math.pow ((1/2),(self.sample.transpose-(self.sample.fine_tune/128))/12)
   end
 end
+
+---------------------------------------------------------------------------------------------------
+-- Generators 
+---------------------------------------------------------------------------------------------------
+-- Create random waveform 
+
+function SSK:random_wave()
+  TRACE("SSK:random_wave()")
+
+  local range = self:get_selection_range()
+  -- TODO move from cWaveform to here...
+  self.random_wave_fn = cWaveform.random_wave(range)
+  self:make_wave(self.random_wave_fn)
+  self.random_generated_observable:bang()
+
+  -- 1/10th chance of additional spice 
+  --[[
+  if (math.random() < 0.1) then
+    local max = math.random(3)
+    for i = 1,max do
+      self:make_wave(cWaveform.random_copy_fn(range))
+    end
+  end
+  ]]
+
+end
+
+---------------------------------------------------------------------------------------------------
+-- Create random waveform 
+
+function SSK:repeat_random_wave()
+  TRACE("SSK:repeat_random_wave()")
+
+  if not self.random_wave_fn then 
+    return 
+  end 
+
+  local range = self:get_selection_range()
+  self:make_wave(self.random_wave_fn)
+
+end
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:generate_white_noise()
+  TRACE("SSK:generate_white_noise()")
+  self.recently_generated = cWaveform.FORM.WHITE_NOISE
+  self:make_wave(cWaveform.white_noise_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:generate_brown_noise()
+  TRACE("SSK:generate_brown_noise()")
+  self.recently_generated = cWaveform.FORM.BROWN_NOISE
+  self:make_wave(cWaveform.brown_noise_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:generate_violet_noise()
+  TRACE("SSK:generate_violet_noise()")
+  self.recently_generated = cWaveform.FORM.VIOLET_NOISE
+  self:make_wave(cWaveform.violet_noise_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:generate_sine_wave()
+  TRACE("SSK:generate_sine_wave()")
+  self.recently_generated = cWaveform.FORM.SIN
+  self.wave_fn = cWaveform.wave_fn(cWaveform.FORM.SIN,
+    self.mod_cycle,
+    self.prefs.mod_shift.value/100,
+    self.prefs.mod_duty_onoff.value,
+    self.prefs.mod_duty.value,
+    self.prefs.mod_duty_var.value,
+    self.prefs.mod_duty_var_frq.value,
+    self.prefs.band_limited.value,
+    self:get_selection_range())
+  self.mod_fn = self:make_wave(self.wave_fn,self.mod_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:generate_saw_wave()
+  TRACE("SSK:generate_saw_wave()")
+  self.recently_generated = cWaveform.FORM.SAW
+  self.wave_fn = cWaveform.wave_fn(cWaveform.FORM.SAW,
+    self.mod_cycle,
+    self.prefs.mod_shift.value/100,
+    self.prefs.mod_duty_onoff.value,
+    self.prefs.mod_duty.value,
+    self.prefs.mod_duty_var.value,
+    self.prefs.mod_duty_var_frq.value,
+    self.prefs.band_limited.value,
+    self:get_selection_range())
+  self.mod_fn = self:make_wave(self.wave_fn,self.mod_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:generate_square_wave()
+  TRACE("SSK:generate_square_wave()")
+  self.recently_generated = cWaveform.FORM.SQUARE
+  self.wave_fn = cWaveform.wave_fn(cWaveform.FORM.SQUARE,
+    self.mod_cycle,
+    self.prefs.mod_shift.value/100,
+    self.prefs.mod_duty_onoff.value,
+    self.prefs.mod_duty.value,
+    self.prefs.mod_duty_var.value,
+    self.prefs.mod_duty_var_frq.value,
+    self.prefs.band_limited.value,
+    self:get_selection_range())
+  self.mod_fn = self:make_wave(self.wave_fn,self.mod_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:generate_triangle_wave()
+  TRACE("SSK:generate_triangle_wave()")
+  self.recently_generated = cWaveform.FORM.TRIANGLE
+  self.wave_fn = cWaveform.wave_fn(cWaveform.FORM.TRIANGLE,
+    self.mod_cycle,
+    self.prefs.mod_shift.value/100,
+    self.prefs.mod_duty_onoff.value,
+    self.prefs.mod_duty.value,
+    self.prefs.mod_duty_var.value,
+    self.prefs.mod_duty_var_frq.value,
+    self.prefs.band_limited.value,
+    self:get_selection_range())
+  self.mod_fn = self:make_wave(self.wave_fn,self.mod_fn)
+
+end 
+
+---------------------------------------------------------------------------------------------------
+-- Modifiers
+---------------------------------------------------------------------------------------------------
+
+function SSK:trim()
+  TRACE("SSK:trim(ratio)")
+
+  local buffer = self:get_sample_buffer() 
+  if not buffer then 
+    return
+  end 
+
+  local range = xSampleBuffer.get_selection_range(buffer)
+
+  local bop = xSampleBufferOperation{
+    instrument_index = self.instrument_index,
+    sample_index = self.sample_index,
+    force_frames = range,
+    operations = {
+      xSampleBuffer.trim{
+        buffer=buffer,
+      },
+    },
+    on_complete = function(_bop_)
+      -- select/loop everything 
+      local sample = _bop_.sample
+      xSample.set_loop_all(sample)
+      xSampleBuffer.select_all(sample.sample_buffer)
+    end
+  }
+  bop:run()
+
+end
+
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:phase_shift_with_ratio(ratio)
+  TRACE("SSK:phase_shift_with_ratio(ratio)",ratio)
+
+  local buffer = self:get_sample_buffer() 
+  if buffer then 
+    local range = xSampleBuffer.get_selection_range(buffer)
+    self:phase_shift_fine(range*ratio)
+  end 
+
+end
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:phase_shift_fine(frame)
+  TRACE("SSK:phase_shift_fine(frame)",frame)
+
+  local buffer = self:get_sample_buffer() 
+  if not buffer then 
+    return 
+  end 
+
+  local on_complete = function()
+    TRACE("[SSK:phase_shift_with_ratio] on_complete - ")
+  end    
+
+  local bop = xSampleBufferOperation{
+    instrument_index = self.instrument_index,
+    sample_index = self.sample_index,
+    restore_selection = true,
+    restore_loop = true,
+    restore_zoom = true,
+    operations = {
+      xSampleBuffer.phase_shift{
+        buffer=buffer,
+        frame=frame,
+      },
+    }
+  }
+  bop:run()
+
+end
+
+---------------------------------------------------------------------------------------------------
+-- apply fade operation to buffer 
+-- @param fn 
+
+function SSK:set_fade(fn,mod_fn)
+  TRACE("SSK:set_fade(fn,mod_fn)",fn,mod_fn)
+  local buffer = self:get_sample_buffer() 
+  if buffer then 
+
+    local bop = xSampleBufferOperation{
+      instrument_index = self.instrument_index,
+      sample_index = self.sample_index,
+      restore_selection = true,
+      restore_loop = true,
+      restore_zoom = true,
+      operations = {
+        xSampleBuffer.set_fade{
+          buffer=buffer,
+          fn=fn,
+          mod_fn=mod_fn,
+        }
+      },
+      on_complete = function()
+        TRACE("[set_fade] process_done")
+      end
+    }
+    bop:run()
+
+  end 
+end
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:fade_mod_sin()
+  self.mod_fade_fn = cWaveform.mod_fn_fn(
+    self.mod_fade_cycle,
+    self.prefs.mod_fade_shift.value,
+    self.prefs.mod_pd_duty_onoff.value,
+    self.prefs.mod_pd_duty.value,
+    self.prefs.mod_pd_duty_var.value,
+    self.prefs.mod_pd_duty_var_frq.value)
+  self:set_fade(cWaveform.sin_2pi_fn,self.mod_fade_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:fade_mod_saw()
+  self.mod_fade_fn = cWaveform.mod_fn_fn(
+    self.mod_fade_cycle,
+    self.prefs.mod_fade_shift.value,
+    self.prefs.mod_pd_duty_onoff.value,
+    self.prefs.mod_pd_duty.value,
+    self.prefs.mod_pd_duty_var.value,
+    self.prefs.mod_pd_duty_var_frq.value)
+  self:set_fade(cWaveform.saw_fn,self.mod_fade_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:fade_mod_square()
+  self.mod_fade_fn = cWaveform.mod_fn_fn(
+    self.mod_fade_cycle,
+    self.prefs.mod_fade_shift.value,
+    self.prefs.mod_pd_duty_onoff.value,
+    self.prefs.mod_pd_duty.value,
+    self.prefs.mod_pd_duty_var.value,
+    self.prefs.mod_pd_duty_var_frq.value)
+  self:set_fade(cWaveform.square_fn,self.mod_fade_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:fade_mod_triangle()
+  self.mod_fade_fn = cWaveform.mod_fn_fn(
+    self.mod_fade_cycle,
+    self.prefs.mod_fade_shift.value,
+    self.prefs.mod_pd_duty_onoff.value,
+    self.prefs.mod_pd_duty.value,
+    self.prefs.mod_pd_duty_var.value,
+    self.prefs.mod_pd_duty_var_frq.value)
+  self:set_fade(cWaveform.triangle_fn,self.mod_fade_fn)
+end 
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:pd_copy()  
+  local buffer = self:get_sample_buffer() 
+  local mod = cWaveform.mod_fn_fn(
+    self.mod_fade_cycle,
+    self.prefs.mod_fade_shift.value,
+    self.prefs.mod_pd_duty_onoff.value,
+    self.prefs.mod_pd_duty.value,
+    self.prefs.mod_pd_duty_var.value,
+    self.prefs.mod_pd_duty_var_frq.value)
+  local fn = xSampleBuffer.copy_fn_fn(
+    self.buffer,nil,buffer.selection_start,buffer.selection_end)
+  self:make_wave(fn,mod)
+end 
 
 ---------------------------------------------------------------------------------------------------
 -- Observables
@@ -1181,6 +1317,7 @@ end
 ---------------------------------------------------------------------------------------------------
 
 function SSK:detach_from_sample()
+  TRACE("SSK:detach_from_sample()")
 
   if self.sample then 
 
@@ -1214,6 +1351,67 @@ function SSK:detach_from_sample()
   end 
 
 end 
+
+---------------------------------------------------------------------------------------------------
+-- execute realtime generating waveforms
+
+function SSK:attach_realtime_methods()
+  TRACE("SSK:attach_realtime_methods()")
+
+  -- schedule update 
+  local update_wave = function()
+    print("*** update_wave")
+    self.update_wave_requested = true
+  end
+
+  self.prefs.band_limited:add_notifier(update_wave)
+  self.prefs.mod_cycle:add_notifier(update_wave)
+  self.prefs.mod_shift:add_notifier(update_wave)
+  self.prefs.mod_duty_onoff:add_notifier(update_wave)
+  self.prefs.mod_duty:add_notifier(update_wave)
+  self.prefs.mod_duty_var:add_notifier(update_wave)
+  self.prefs.mod_duty_var_frq:add_notifier(update_wave)
+
+end
+
+---------------------------------------------------------------------------------------------------
+-- (auto-)update recently generated
+
+function SSK:update_wave()
+  TRACE("SSK:update_wave()")
+  local buffer = self:get_sample_buffer() 
+  if buffer then
+    local choice = {
+      [cWaveform.FORM.SIN] = function()
+        self:generate_sine_wave()
+      end,
+      [cWaveform.FORM.SAW] = function()
+        self:generate_saw_wave()
+      end,
+      [cWaveform.FORM.SQUARE] = function()
+        self:generate_square_wave()
+      end,
+      [cWaveform.FORM.TRIANGLE] = function()
+        self:generate_triangle_wave()
+      end,
+    }
+    if choice[self.recently_generated] then 
+      choice[self.recently_generated]()
+    end 
+  end
+end    
+
+---------------------------------------------------------------------------------------------------
+
+function SSK:idle_notifier()
+  --TRACE("SSK:idle_notifier()")
+
+  if self.update_wave_requested and self.wave_fn and self.recently_generated then 
+    self.update_wave_requested = false
+    self:update_wave()
+  end 
+
+end
 
 ---------------------------------------------------------------------------------------------------
 -- Static methods

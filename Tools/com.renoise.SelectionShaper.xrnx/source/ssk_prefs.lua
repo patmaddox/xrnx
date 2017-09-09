@@ -27,6 +27,7 @@ function SSK_Prefs:__init()
   self:add_property("display_modify_panel", renoise.Document.ObservableBoolean(false))
   self:add_property("display_options_panel", renoise.Document.ObservableBoolean(false))
   self:add_property("display_selection_as", renoise.Document.ObservableNumber(0))
+  self:add_property("auto_generate", renoise.Document.ObservableBoolean(false))
   self:add_property("multisample_mode", renoise.Document.ObservableBoolean(false))
   self:add_property("safe_mode", renoise.Document.ObservableBoolean(true))
 
@@ -42,24 +43,28 @@ function SSK_Prefs:__init()
   self:add_property("multisample_vel_max",renoise.Document.ObservableNumber(0))
   self:add_property("multisample_vel_steps",renoise.Document.ObservableNumber(0))
 
-  -- waveform
+  -- selection 
   self:add_property("multiply_setend", renoise.Document.ObservableString(""))
+  self:add_property("flick_paste", renoise.Document.ObservableBoolean(false))
+
+  -- generate 
+  self:add_property("band_limited", renoise.Document.ObservableBoolean(false))
   self:add_property("mod_cycle", renoise.Document.ObservableString(""))
   self:add_property("mod_shift", renoise.Document.ObservableNumber(0))
   self:add_property("mod_duty_onoff", renoise.Document.ObservableBoolean(false))
   self:add_property("mod_duty", renoise.Document.ObservableNumber(0))
   self:add_property("mod_duty_var", renoise.Document.ObservableNumber(0))
   self:add_property("mod_duty_var_frq", renoise.Document.ObservableNumber(0))
-  self:add_property("mod_fade_cycle", renoise.Document.ObservableString(""))
+
+  -- modify
   self:add_property("mod_fade_shift", renoise.Document.ObservableNumber(0))
+  self:add_property("mod_fade_cycle", renoise.Document.ObservableString(""))
   self:add_property("mod_pd_duty_onoff", renoise.Document.ObservableBoolean(false))
   self:add_property("mod_pd_duty",renoise.Document.ObservableNumber(0))
   self:add_property("mod_pd_duty_var",renoise.Document.ObservableNumber(0))
   self:add_property("mod_pd_duty_var_frq",renoise.Document.ObservableNumber(0))
-  self:add_property("flick_paste", renoise.Document.ObservableBoolean(false))
-  self:add_property("band_limited", renoise.Document.ObservableBoolean(false))
-  self:add_property("center_fade_percent", renoise.Document.ObservableNumber(0))
   self:add_property("multiply_percent", renoise.Document.ObservableNumber(0))
+  self:add_property("center_fade_percent", renoise.Document.ObservableNumber(0))
   self:add_property("fade_percent", renoise.Document.ObservableNumber(0))
   self:add_property("resize_percent", renoise.Document.ObservableNumber(0))
 
