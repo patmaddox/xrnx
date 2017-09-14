@@ -131,8 +131,8 @@ function cWaveform.mix_fn_fn(fn1,fn2,deg)
   local d = (1/2)
   if type(deg) == 'number' then d = deg end
   return function(x,ch)
-    print("fn1",x,ch,fn1(x,ch)*d)
-    print("fn2",x,ch,fn2(x,ch)*(1-d))
+    --print("fn1",x,ch,fn1(x,ch)*d)
+    --print("fn2",x,ch,fn2(x,ch)*(1-d))
     return fn1(x,ch)*d + fn2(x,ch)*(1-d)
   end
 end
