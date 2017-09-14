@@ -535,6 +535,32 @@ function xSampleBuffer.get_nearest_offset(num_frames,offset,reverse)
 end
 
 ---------------------------------------------------------------------------------------------------
+-- return next viable offset
+-- @param offset (number), between 0x00 and 0xFF
+-- @return number 
+
+function xSampleBuffer.get_next_offset(num_frames,offset)
+  TRACE("xSampleBuffer.get_next_offset(num_frames,offset)",num_frames,offset)
+
+  local indices,_ = xSampleBuffer.get_offset_indices(num_frames)
+  return cTable.next(indices,offset)  
+
+end
+
+---------------------------------------------------------------------------------------------------
+-- return previous viable offset
+-- @param offset (number), between 0x00 and 0xFF
+-- @return number 
+
+function xSampleBuffer.get_previous_offset(num_frames,offset)
+  TRACE("xSampleBuffer.get_previous_offset(num_frames,offset)",num_frames,offset)
+
+  local indices,_ = xSampleBuffer.get_offset_indices(num_frames)
+  return cTable.previous(indices,offset)  
+
+end
+
+---------------------------------------------------------------------------------------------------
 -- get a "OS" offset by position in buffer 
 -- (NB: this method does not support/detect the Amiga/FT2 compatibility mode)
 -- @param buffer (renoise.SampleBuffer)
@@ -551,18 +577,16 @@ function xSampleBuffer.get_offset_by_frame(buffer,frame)
   end
 
   local num_frames = buffer.number_of_frames
-  local offset 
+  local offset = (frame-1)*(0x100/buffer.number_of_frames)
 
+  -- handle small buffers differently 
   if (num_frames < 0x100) then 
-    -- handle small buffers differently 
-    offset = (frame-1)*(0x100/buffer.number_of_frames)
-    --print("get_offset_by_frame - in,out",frame,offset,("%x"):format(offset))  
     offset = xSampleBuffer.get_nearest_offset(num_frames,cLib.round_value(offset),true)
   else 
-    offset = cLib.round_value((frame/num_frames)*0x100)
-    --print("get_offset_by_frame - in,out",frame,offset,("%x"):format(offset))  
+    offset = cLib.round_value(offset)
   end 
 
+  print("*** get_offset_by_frame - in,out",frame,offset)  
   return offset
   
 end
@@ -580,19 +604,23 @@ function xSampleBuffer.get_frame_by_offset(buffer,offset)
   assert(buffer.has_sample_data,"Sample buffer is empty")
 
   if (offset == 0) then
-    return 1 -- special case
+    return 1 
   end
 
   local num_frames = buffer.number_of_frames
+  if (offset >= 0x100) then 
+    return num_frames
+  end
+
   if (num_frames < 0x100) then 
     -- compensate for gaps in small samples 
     offset = xSampleBuffer.get_nearest_offset(num_frames,offset)
   end
 
-  local frame = 1+(offset*num_frames)/256
+  local frame = 1+(offset*num_frames)/0x100
   frame = math.min(frame,num_frames)
 
-  --print("get_frame_by_offset - in,out",offset,cLib.round_value(frame),frame)
+  print("*** get_frame_by_offset - in,out",offset,cLib.round_value(frame),frame)
   return cLib.round_value(frame)
 
 end

@@ -65,80 +65,71 @@ fn = function()
   -------------------------------------------------------------------------------------------------
   -- frame <-> offset converters 
 
-  -- testing against "smaller than offsets"
-  local fake_buffer = {
-    has_sample_data = true,
-    number_of_frames = 67,
-  }
+  local fake_buffer = {}
+  
+  local assert_frame_by_offset = function(offset,expected)
+    local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,offset)
+    assert((frame==expected),("expected frame to be %d, got %d"):format(expected,frame))
+  end 
 
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,2)
-  assert((offset==0x02),"expected offset to be 0x02: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,3)
-  assert((offset==0x06),"expected offset to be 0x06: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,4)
-  assert((offset==0x0A),"expected offset to be 0x0A: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,5)
-  assert((offset==0x0E),"expected offset to be 0x0E: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,6)
-  assert((offset==0x12),"expected offset to be 0x12: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,7)
-  assert((offset==0x16),"expected offset to be 0x16: "..("%x"):format(offset))
-
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x02)
-  assert((frame==2),"expected frame to be 1: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x03) -- <= 0x02
-  assert((frame==2),"expected frame to be 2: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x04) -- <= 0x02
-  assert((frame==2),"expected frame to be 2: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x05) -- => 0x06
-  assert((frame==3),"expected frame to be 3: "..tostring(frame))
-
+  local assert_offset_by_frame = function(frame,expected)
+    local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,frame)
+    assert((offset==expected),("expected offset to be 0x%X, got 0x%X"):format(expected,offset))
+  end 
 
   -- testing against "larger than offsets"
-  local fake_buffer = {
+  fake_buffer = {
     has_sample_data = true,
     number_of_frames = 1000,
   }
 
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x00)
-  assert((frame==1),"expected frame to be 1")
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x02)
-  assert((frame==9),"expected frame to be 9: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x06)
-  assert((frame==24),"expected frame to be 24: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x20)
-  assert((frame==126),"expected frame to be 126: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x40)
-  assert((frame==251),"expected frame to be 251: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x60)
-  assert((frame==376),"expected frame to be 376: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x80)
-  assert((frame==501),"expected frame to be 501: "..tostring(frame))
-  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0xFF)
-  assert((frame==997),"expected frame to be 997: "..tostring(frame))
+  assert_frame_by_offset(0x00,1)
+  assert_frame_by_offset(0x02,9)
+  assert_frame_by_offset(0x06,24)
+  assert_frame_by_offset(0x20,126)
+  assert_frame_by_offset(0x40,251)
+  assert_frame_by_offset(0x60,376)
+  assert_frame_by_offset(0x80,501)
+  assert_frame_by_offset(0xFF,997)
+  assert_offset_by_frame(1,0x00)
+  assert_offset_by_frame(9,0x02)
+  assert_offset_by_frame(24,0x06)
+  assert_offset_by_frame(126,0x20)
+  assert_offset_by_frame(251,0x40)
+  assert_offset_by_frame(376,0x60)
+  assert_offset_by_frame(501,0x80)
+  assert_offset_by_frame(997,0xFF)
+  assert_offset_by_frame(1000,0x100)
 
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,1)
-  assert((offset==0x00),"expected offset to be 0x00: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,9)
-  assert((offset==0x02),"expected offset to be 0x02: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,24)
-  assert((offset==0x06),"expected offset to be 0x06: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,126)
-  assert((offset==0x20),"expected offset to be 0x20: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,251)
-  assert((offset==0x40),"expected offset to be 0x40: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,376)
-  assert((offset==0x60),"expected offset to be 0x60: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,501)
-  assert((offset==0x80),"expected offset to be 0x80: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,997)
-  assert((offset==0xFF),"expected offset to be 0xFF: "..("%x"):format(offset))
-  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,1000)
-  assert((offset==0x100),"expected offset to be 0x100: "..("%x"):format(offset))
+  -- testing against "larger than offsets"
+  fake_buffer = {
+    has_sample_data = true,
+    number_of_frames = 367,
+  }
+
+  assert_frame_by_offset(0x0F,23)
+  assert_frame_by_offset(0x10,24)
+  assert_frame_by_offset(0xFF,367)
+
+  assert_offset_by_frame(1,0x00)
+  assert_offset_by_frame(2,0x01)
+  assert_offset_by_frame(3,0x01)
+  assert_offset_by_frame(4,0x02)
+  assert_offset_by_frame(6,0x03)
+  assert_offset_by_frame(7,0x04)
+  assert_offset_by_frame(8,0x05)
+  assert_offset_by_frame(23,0x0F)
+  assert_offset_by_frame(24,0x10)
+  assert_offset_by_frame(345,0xF0)
+  assert_offset_by_frame(346,0xF1)
+  assert_offset_by_frame(349,0xF3)
+  assert_offset_by_frame(351,0xF4)
+  assert_offset_by_frame(352,0xF5)
+  assert_offset_by_frame(352,0xF5)
 
 
   -- testing against "smaller than offsets"
-  local fake_buffer = {
+  fake_buffer = {
     has_sample_data = true,
     number_of_frames = 168,
   }
@@ -198,7 +189,7 @@ fn = function()
   assert((offset==0xFE),"expected offset to be 0xFE: "..("%x"):format(offset))
 
   -- testing against "smaller than offsets"
-  local fake_buffer = {
+  fake_buffer = {
     has_sample_data = true,
     number_of_frames = 202,
   }
@@ -260,6 +251,36 @@ fn = function()
   assert((offset==0xFD),"expected offset to be 0xFD: "..("%x"):format(offset))
   local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,202)
   assert((offset==0xFF),"expected offset to be 0xFF: "..("%x"):format(offset))
+
+  -- testing against "smaller than offsets"
+  fake_buffer = {
+    has_sample_data = true,
+    number_of_frames = 67,
+  }
+
+  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,2)
+  assert((offset==0x02),"expected offset to be 0x02: "..("%x"):format(offset))
+  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,3)
+  assert((offset==0x06),"expected offset to be 0x06: "..("%x"):format(offset))
+  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,4)
+  assert((offset==0x0A),"expected offset to be 0x0A: "..("%x"):format(offset))
+  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,5)
+  assert((offset==0x0E),"expected offset to be 0x0E: "..("%x"):format(offset))
+  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,6)
+  assert((offset==0x12),"expected offset to be 0x12: "..("%x"):format(offset))
+  local offset = xSampleBuffer.get_offset_by_frame(fake_buffer,7)
+  assert((offset==0x16),"expected offset to be 0x16: "..("%x"):format(offset))
+
+  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x02)
+  assert((frame==2),"expected frame to be 1: "..tostring(frame))
+  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x03) -- <= 0x02
+  assert((frame==2),"expected frame to be 2: "..tostring(frame))
+  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x04) -- <= 0x02
+  assert((frame==2),"expected frame to be 2: "..tostring(frame))
+  local frame = xSampleBuffer.get_frame_by_offset(fake_buffer,0x05) -- => 0x06
+  assert((frame==3),"expected frame to be 3: "..tostring(frame))
+
+
 
   -------------------------------------------------------------------------------------------------
   -- bits_to_xbits
