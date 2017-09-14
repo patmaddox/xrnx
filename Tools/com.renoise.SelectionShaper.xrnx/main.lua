@@ -27,7 +27,7 @@ local app = nil
 _trace_filters = {"^vButtonStrip*"}
 --_trace_filters = {"^SSK_Gui_Keyzone*"}
 _trace_filters = {".*"}
---_trace_filters = nil
+_trace_filters = nil
 
 ---------------------------------------------------------------------------------------------------
 -- Include required files 

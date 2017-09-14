@@ -84,7 +84,7 @@ function SSK_Gui_Keyzone:get_note_steps()
 end
 
 function SSK_Gui_Keyzone:set_note_steps(val)
-  print("SSK_Gui_Keyzone:set_note_steps",val)
+  TRACE("SSK_Gui_Keyzone:set_note_steps",val)
   self.note_steps_observable.value = val
   self:request_update()
 end
@@ -96,7 +96,7 @@ function SSK_Gui_Keyzone:get_note_min()
 end
 
 function SSK_Gui_Keyzone:set_note_min(val)
-  print("SSK_Gui_Keyzone:set_note_min",val)
+  TRACE("SSK_Gui_Keyzone:set_note_min",val)
   self.note_min_observable.value = val
   self:request_update()
 end
@@ -207,37 +207,46 @@ end
 function SSK_Gui_Keyzone:build()
 
   local vb = self.vb
-
+  local spacing = vLib.NULL_SPACING-1
   -- first time: create view 
   if not self.view then
     self.view = vb:column{
-      spacing = vLib.NULL_SPACING-1,
+      spacing = spacing,
       id = self.id,
     }
   end
 
   self:_clear()
 
-  self:_compute_keyzone()
-  self:_compute_velocities()
-  --self:_compute_notes()
+  -- compute layout
+  self._keyzone = xKeyZone.create_multisample_layout(
+    self.note_steps,self.note_min,self.note_max,
+    self.vel_steps,self.vel_min,self.vel_max
+  )
 
-  -- create rows 
+  -- compute "rows" 
+  self:_compute_velocities()
+  local heights = {}
+  for k,v in ipairs(self._row_data) do 
+    table.insert(heights,v.weight)
+  end
+  heights = vLib.calculate_sizes(heights,self.height,spacing)
+
+  -- create strips 
   for k,v in ipairs(self._row_data) do 
     local vstrip = vButtonStrip{
       vb = vb,
       width = self.width,
-      height = math.max(5,v.weight),
       pressed = function(idx,_strip_)
-        print("pressed: ",k,idx,rprint(v),rprint(_strip_.items[idx]))
+        print(">>> pressed: ",k,idx,rprint(v),rprint(_strip_.items[idx]))
       end,
       items = self:_compute_notes(v.velocity_range,v.void),
     }
+    -- apply height afterwards, to retain dimensions
+    vstrip.height = heights[k]
     table.insert(self._rows,vstrip)
     self.view:add_child(vstrip.view)
   end 
-
-  --vControl.build(self)
 
 end
 
@@ -258,17 +267,6 @@ function SSK_Gui_Keyzone:update()
   TRACE("SSK_Gui_Keyzone:update()")
 
   self:build()
-
-end
-
----------------------------------------------------------------------------------------------------
-
-function SSK_Gui_Keyzone:_compute_keyzone()
-
-  self._keyzone = xKeyZone.create_multisample_layout(
-    self.note_steps,self.note_min,self.note_max,
-    self.vel_steps,self.vel_min,self.vel_max
-  )
 
 end
 
@@ -309,32 +307,21 @@ function SSK_Gui_Keyzone:_compute_velocities()
     })
   end 
 
-  --print("_row_data...")
-  --rprint(self._row_data)
-
 end
 
 ---------------------------------------------------------------------------------------------------
 -- populate each strip with members 
 
 function SSK_Gui_Keyzone:_compute_notes(velocity_range,void)
-  print("SSK_Gui_Keyzone:_compute_notes(velocity_range,void)",velocity_range,void)
+  TRACE("SSK_Gui_Keyzone:_compute_notes(velocity_range,void)",velocity_range,void)
 
   local rslt = {}
 
-  print("SSK_Gui_Keyzone:compute_multisample_notes - self.note_min",self.note_min)
-
-  -- steps
   local notes = xKeyZone.compute_multisample_notes(
     self.note_steps,self.note_min,self.note_max,self.extend_notes)
   for k,v in ipairs(notes) do 
-
-    --local mapping = xKeyZone.find_mapping(self._keyzone,v,velocity_range)
-    --print("mapping ",mapping.note_range[1],mapping.note_range[2],mapping.velocity_range[1],mapping.velocity_range[2])
-
     table.insert(rslt,vButtonStripMember{
       weight = v[2]-v[1],
-      --text = not void and "X" or "-",
       color = not void and self.color_content or self.color_empty,
     })
   end

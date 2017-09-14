@@ -41,6 +41,7 @@ function SSK:__init(prefs)
   self.sample_index_observable = renoise.Document.ObservableNumber(0)
   self.sample_name_observable = renoise.Document.ObservableString("")
   self.sample_loop_changed_observable = renoise.Document.ObservableBang()
+  self.sample_tuning_changed_observable = renoise.Document.ObservableBang()
   self.samples_changed_observable = renoise.Document.ObservableBang()
   self.buffer_changed_observable = renoise.Document.ObservableBang()
 
@@ -203,7 +204,7 @@ end
 -- @return boolean (true when created)
 
 function SSK:make_wave(fn,mod_fn)
-  print("SSK:make_wave(fn,mod_fn)",fn,mod_fn)
+  TRACE("SSK:make_wave(fn,mod_fn)",fn,mod_fn)
 
   local buffer = self:get_sample_buffer() 
   if not buffer then 
@@ -308,7 +309,7 @@ function SSK:buffer_mixdraw()
   if self.clip_wv_fn and buffer then
     local fn = xSampleBuffer.copy_fn_fn(buffer)
     local mix = cWaveform.mix_fn_fn(fn,self.clip_wv_fn,0.5)
-    print("fn,mix,clip_wv_fn",fn,mix,self.clip_wv_fn)
+    --print("fn,mix,clip_wv_fn",fn,mix,self.clip_wv_fn)
     self:make_wave(mix)
   end
 end 
@@ -481,8 +482,8 @@ function SSK:selection_multiply_length()
   if buffer then
     if self:display_selection_as_os_fx() then 
       local new_length_offset = cLib.round_value(self.multiply_setend*self.sel_length_offset)
-      print("sel_length_offset",self.sel_length_offset)
-      buffer.selection_end = xSampleBuffer.get_frame_by_offset(buffer,self.sel_start_offset+new_length_offset)-1      
+      local new_offset = self.sel_start_offset+new_length_offset
+      buffer.selection_end = xSampleBuffer.get_frame_by_offset(buffer,new_offset)-1
     else  
       local range = xSampleBuffer.get_selection_range(buffer)
       local new_length = cLib.round_value(self.multiply_setend*range)
@@ -502,8 +503,8 @@ function SSK:selection_divide_length()
   if buffer then
     if self:display_selection_as_os_fx() then 
       local new_length_offset = cLib.round_value((1/self.multiply_setend)*self.sel_length_offset)
-      print("new_length_offset",new_length_offset)
-      buffer.selection_end = xSampleBuffer.get_frame_by_offset(buffer,self.sel_start_offset+new_length_offset)-1
+      local new_offset = self.sel_start_offset+new_length_offset
+      buffer.selection_end = xSampleBuffer.get_frame_by_offset(buffer,new_offset)-1
     else
       local range = xSampleBuffer.get_selection_range(buffer)
       local new_length = cLib.round_value((1/self.multiply_setend)*range)
@@ -514,12 +515,72 @@ function SSK:selection_divide_length()
 end
 
 ---------------------------------------------------------------------------------------------------
+-- true when the current selection aligns perfectly with the start (no leading space)
+-- @return boolean 
+
+function SSK:is_perfect_lead()
+  TRACE("SSK:is_perfect_lead()")
+
+  local as_os_fx = self:display_selection_as_os_fx()
+  if as_os_fx then
+    return self.sel_start_offset%self.sel_length_offset == 0
+  else
+    return false
+  end
+
+end
+
+---------------------------------------------------------------------------------------------------
+-- true when the current selection aligns perfectly with the end (no trailing space)
+-- @return boolean 
+
+function SSK:is_perfect_trail()
+  TRACE("SSK:is_perfect_trail()")
+
+  local as_os_fx = self:display_selection_as_os_fx()
+  if as_os_fx then 
+    local tmp = self.sel_start_offset
+    while (tmp < 256) do 
+      tmp = tmp + self.sel_length_offset
+      if (tmp == 256) then 
+        return true
+      end 
+    end 
+  end
+  return false 
+
+end
+
+---------------------------------------------------------------------------------------------------
+-- 0S/offset mode: obtain the start & end of specific segment
+-- return number,number (1-#frames in buffer)
+
+function SSK:get_nth_segment_by_offset(idx,num_segments)
+  TRACE("SSK:get_nth_segment_by_offset(idx,num_segments)",idx,num_segments)
+
+  local buffer = self:get_sample_buffer()
+  assert(buffer)
+  local frame_start = xSampleBuffer.get_frame_by_offset(buffer,idx*self.sel_length_offset)
+  local frame_end = xSampleBuffer.get_frame_by_offset(buffer,(idx+1)*self.sel_length_offset)
+
+  if (idx+1 == num_segments) then 
+    -- extend last segment to the end  
+    frame_end = buffer.number_of_frames
+  else 
+    frame_end = frame_end - 1
+  end 
+  
+  return frame_start,frame_end
+
+end
+
+---------------------------------------------------------------------------------------------------
 -- set selection range in frames, expand buffer when needed 
 -- @param range (number), selection range/length
 -- @param sel_start (number), can be outside current buffer 
 
 function SSK:apply_selection_range(range,sel_start)
-  TRACE("SSK:apply_selection_range(range,sel_start)",range,sel_start)
+  print("SSK:apply_selection_range(range,sel_start)",range,sel_start)
 
   assert(type(range)=="number")
 
@@ -534,6 +595,7 @@ function SSK:apply_selection_range(range,sel_start)
   if (range <= 0) then 
     renoise.app():show_error('Enter a number greater than zero')
   elseif (end_point <= buffer.number_of_frames) then
+    print("set selection_range",sel_start,end_point)
     buffer.selection_range = {sel_start,end_point}
   elseif (end_point > buffer.number_of_frames) then
     local extend_by = end_point - buffer.number_of_frames
@@ -577,9 +639,13 @@ function SSK:flick_forward()
 
   if self:display_selection_as_os_fx() then 
     -- special handling for OS (stay precise)
-    new_start = xSampleBuffer.get_frame_by_offset(
-      buffer,self.sel_start_offset+self.sel_length_offset)
-    new_end = xSampleBuffer.get_frame_by_offset(buffer,self.sel_start_offset+(self.sel_length_offset*2)) - 1
+    local new_start_offset = self.sel_start_offset+self.sel_length_offset
+    local new_end_offset = self.sel_start_offset+(self.sel_length_offset*2)
+    new_start = xSampleBuffer.get_frame_by_offset(buffer,new_start_offset)    
+    new_end = xSampleBuffer.get_frame_by_offset(buffer,new_end_offset)
+    if (new_end_offset < 256) then 
+      new_end = new_end - 1
+    end 
   else 
     -- normal, frame based calculation
     new_start = buffer.selection_start+range
@@ -618,7 +684,7 @@ function SSK:flick_back()
     new_end = new_start+range-1
   end 
 
-  print("flick back - new_start,new_end",new_start,new_end)
+  --print("flick back - new_start,new_end",new_start,new_end)
 
   if (new_start-1 >= 0) then
     buffer.selection_range = {new_start,new_end}
@@ -668,7 +734,7 @@ function SSK:obtain_sel_start_from_editor()
     self.sel_start_frames = buffer.selection_start
     self.sel_start_beats = self:get_beats_from_frame(buffer.selection_start)
     self.sel_start_offset = self:get_offset_from_frame(buffer.selection_start)
-    print(">>> self.sel_start_offset",self.sel_start_offset)
+    --print(">>> self.sel_start_offset",self.sel_start_offset)
   end 
 
 end
@@ -691,10 +757,8 @@ function SSK:obtain_sel_length_from_editor()
     local range = xSampleBuffer.get_selection_range(buffer)
     self.sel_length_frames = xSampleBuffer.get_selection_range(buffer)
     self.sel_length_beats = self:get_beats_from_frame(range)
-    print(">>> self:obtain_sel_end_offset(buffer)",self:obtain_sel_end_offset(buffer))
     self.sel_length_offset = self:obtain_sel_end_offset(buffer)-self.sel_start_offset
     print(">>> self.sel_length_offset",self.sel_length_offset)
-    --self.sel_length_offset = self:get_offset_from_frame(sel_length_offset)
   end 
 
 end
@@ -732,7 +796,7 @@ end
 -- @return number or nil, number or nil, number or nil
 
 function SSK:interpret_selection_input(str,is_start)
-  print("SSK:interpret_selection_input(str)",str)
+  TRACE("SSK:interpret_selection_input(str)",str)
 
   local buffer = self:get_sample_buffer() 
   assert(type(buffer)=="SampleBuffer")
@@ -771,7 +835,7 @@ function SSK:interpret_selection_input(str,is_start)
       offset = xSampleBuffer.get_offset_by_frame(buffer,frame)
     end          
   end
-  print(">>> interpret_selection_input - offset,beat,frame",offset,beat,frame)
+  --print(">>> interpret_selection_input - offset,beat,frame",offset,beat,frame)
   return offset,beat,frame
 
 end
@@ -804,6 +868,23 @@ function SSK:beat_unit_with_base_tune()
   else 
     return math.pow ((1/2),(self.sample.transpose-(self.sample.fine_tune/128))/12)
   end
+end
+
+---------------------------------------------------------------------------------------------------
+-- figure out the hz for the current selection, including sample transpose
+
+function SSK:get_hz_from_selection()
+  TRACE("SSK:get_hz_from_selection()")
+
+  local buffer = self:get_sample_buffer() 
+  assert(type(buffer)=="SampleBuffer")
+  assert(type(self.sample)=="Sample")
+
+  local sel_hz = buffer.sample_rate/xSampleBuffer.get_selection_range(buffer) 
+  local transp_hz = cLib.note_to_hz(xSample.get_transpose(self.sample))
+  local base_hz = cLib.note_to_hz(48) 
+  return (transp_hz / base_hz) * sel_hz
+
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -1171,6 +1252,14 @@ function SSK:sample_buffer_notifier()
 end 
 
 ---------------------------------------------------------------------------------------------------
+-- invoked when sample tuning has changed
+
+function SSK:sample_tuning_notifier()
+  print("SSK:sample_tuning_notifier()")
+  self.sample_tuning_changed_observable:bang()  
+end 
+
+---------------------------------------------------------------------------------------------------
 -- @param new_song (boolean)
 
 function SSK:attach_to_song(new_song)
@@ -1299,7 +1388,19 @@ function SSK:attach_to_sample(new_song)
     if not obs:has_notifier(self,self.sample_buffer_notifier) then
       obs:add_notifier(self,self.sample_buffer_notifier)
     end
-    --self:sample_buffer_notifier()
+    local obs = self.sample.fine_tune_observable
+    if not obs:has_notifier(self,self.sample_tuning_notifier) then
+      obs:add_notifier(self,self.sample_tuning_notifier)
+    end
+    local obs = self.sample.transpose_observable
+    if not obs:has_notifier(self,self.sample_tuning_notifier) then
+      obs:add_notifier(self,self.sample_tuning_notifier)
+    end
+    -- sample-mapping 
+    local obs = self.sample.sample_mapping.base_note_observable
+    if not obs:has_notifier(self,self.sample_tuning_notifier) then
+      obs:add_notifier(self,self.sample_tuning_notifier)
+    end
 
     -- sample-buffer
     if self:get_sample_buffer() then 
@@ -1341,6 +1442,18 @@ function SSK:detach_from_sample()
     if not obs:has_notifier(self,self.sample_buffer_notifier) then
       obs:remove_notifier(self,self.sample_buffer_notifier)
     end    
+    local obs = self.sample.fine_tune_observable    
+    if not obs:has_notifier(self,self.sample_tuning_notifier) then
+      obs:remove_notifier(self,self.sample_tuning_notifier)
+    end    
+    local obs = self.sample.transpose_observable    
+    if not obs:has_notifier(self,self.sample_tuning_notifier) then
+      obs:remove_notifier(self,self.sample_tuning_notifier)
+    end    
+    local obs = self.sample.sample_mapping.base_note_observable
+    if not obs:has_notifier(self,self.sample_tuning_notifier) then
+      obs:remove_notifier(self,self.sample_tuning_notifier)
+    end    
     if self:get_sample_buffer() then 
       local obs = self.sample.sample_buffer.selection_range_observable
       if obs:has_notifier(self,self.selection_range_notifier) then 
@@ -1360,7 +1473,7 @@ function SSK:attach_realtime_methods()
 
   -- schedule update 
   local update_wave = function()
-    print("*** update_wave")
+    --print("*** update_wave")
     self.update_wave_requested = true
   end
 

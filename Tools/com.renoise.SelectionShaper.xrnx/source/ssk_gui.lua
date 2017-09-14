@@ -17,6 +17,9 @@ local prefs = renoise.tool().preferences
 
 class 'SSK_Gui' (vDialog)
 
+-- how large a selection before we display in the strip
+SSK_Gui.MIN_SELECTION_RATIO = 1/64
+
 SSK_Gui.DISPLAY_AS = {
   OS_EFFECT = 1,
   BEATS = 2,
@@ -35,9 +38,10 @@ SSK_Gui.INPUT_WIDTH = 80
 SSK_Gui.LABEL_WIDTH = 64
 SSK_Gui.FORMULA_WIDTH = 120
 SSK_Gui.TOGGLE_SIZE = 16
+SSK_Gui.KEYZONE_HEIGHT = 120
+SSK_Gui.KEYZONE_LABEL_WIDTH = 52
 SSK_Gui.SMALL_LABEL_WIDTH = 44
 SSK_Gui.STRIP_HEIGHT = 36
---SSK_Gui.PANEL_MARGIN = 6
 SSK_Gui.PANEL_INNER_MARGIN = 3
 SSK_Gui.ITEM_MARGIN = 6
 SSK_Gui.ITEM_SPACING = 3
@@ -54,6 +58,7 @@ SSK_Gui.PANEL_HEADER_FONT = "bold"
 -- derived 
 SSK_Gui.SMALL_BT_X2_WIDTH = SSK_Gui.SMALL_BT_WIDTH*2 + SSK_Gui.NULL_SPACING
 SSK_Gui.DIALOG_INNER_WIDTH = SSK_Gui.DIALOG_WIDTH - 2*SSK_Gui.DIALOG_MARGIN
+SSK_Gui.KEYZONE_WIDTH = SSK_Gui.DIALOG_INNER_WIDTH - 2*SSK_Gui.KEYZONE_LABEL_WIDTH - 3
 
 SSK_Gui.MSG_GET_LENGTH_BEAT_TIP = [[
 Input the number or the formula 
@@ -167,6 +172,9 @@ function SSK_Gui:__init(...)
   -- SSK_Gui_Keyzone
   self.vkeyzone = nil
 
+  -- boolean
+  self.reset_spinner_requested = false
+
   -- == Observables == 
 
   self.display_buffer_as_loop_observable:add_notifier(function()
@@ -175,12 +183,10 @@ function SSK_Gui:__init(...)
   end)
   self.owner.tempo_changed_observable:add_notifier(function()
     TRACE(">>> SSK_Gui:tempo_changed_observable fired...")
-    --self.vb.views.set_start_val_frame.value = tostring(self.owner.sel_start_frames)
     self.update_selection_requested = true
   end)
   self.owner.selection_changed_observable:add_notifier(function()
     TRACE(">>> SSK_Gui:selection_changed_observable fired...")
-    --self.vb.views.set_start_val_frame.value = tostring(self.owner.sel_start_frames)
     self.update_strip_requested = true
     self.update_selection_header_requested = true
   end)
@@ -196,7 +202,14 @@ function SSK_Gui:__init(...)
   end)
   self.owner.buffer_changed_observable:add_notifier(function()
     TRACE(">>> SSK_Gui:buffer_changed_observable fired...")
+    -- this can be the only way to update after sample becomes available  
+    -- (request same updates as when sample_index has triggered...)
+    self.update_toolbar_requested = true    
     self.update_strip_requested = true
+    self.update_select_panel_requested = true
+    self.update_modify_panel_requested = true
+    self.update_generate_panel_requested = true
+    self.update_selection_header_requested = true
   end)
   self.owner.sel_length_frames_observable:add_notifier(function()
     TRACE(">>> SSK_Gui:sel_length_frames_observable fired...")
@@ -208,13 +221,16 @@ function SSK_Gui:__init(...)
   end)
   self.owner.sample_name_observable:add_notifier(function()
     TRACE(">>> SSK_Gui:sample_name_observable fired...")
-    -- update controls that display the same name 
     self.update_toolbar_requested = true    
     self.update_selection_header_requested = true
   end)
   self.owner.sample_loop_changed_observable:add_notifier(function()
     TRACE(">>> SSK_Gui:sample_loop_changed_observable fired...")
     self.update_strip_requested = true    
+    self.update_selection_header_requested = true
+  end)
+  self.owner.sample_tuning_changed_observable:add_notifier(function()
+    TRACE(">>> SSK_Gui:sample_tuning_changed_observable fired...")
     self.update_selection_header_requested = true
   end)
   self.owner.instrument_name_observable:add_notifier(function()
@@ -225,7 +241,6 @@ function SSK_Gui:__init(...)
   end)
   self.owner.sample_index_observable:add_notifier(function()
     TRACE(">>> SSK_Gui:sample_index_observable fired...")
-    -- update any controls that should be enabled or disabled
     self.update_toolbar_requested = true    
     self.update_strip_requested = true
     self.update_select_panel_requested = true
@@ -253,7 +268,6 @@ function SSK_Gui:__init(...)
     self:update_pd_duty_cycle()
   end)
   prefs.multisample_mode:add_notifier(function()
-    print("multisample_mode",prefs.multisample_mode.value)
     self.update_toolbar_requested = true
     self:update_panel_visibility()
   end)
@@ -270,7 +284,15 @@ function SSK_Gui:__init(...)
     self:update_panel_visibility()
   end)
   prefs.display_selection_as:add_notifier(function()
+    local as_os_fx = self.owner:display_selection_as_os_fx()
+    if as_os_fx and prefs.sync_with_renoise.value then 
+      -- prevent value from being interpreted (changed)
+      -- when switching from frames to offsets
+      self.owner:obtain_sel_start_from_editor()
+      self.owner:obtain_sel_length_from_editor()
+    end    
     self.update_selection_requested = true
+    self.update_strip_requested = true
   end)
   renoise.tool().app_idle_observable:add_notifier(function()
     self:idle_notifier()
@@ -640,6 +662,7 @@ function SSK_Gui:update_selection_strip()
 
   if not self.owner:get_sample_buffer() then 
     self.selection_strip.items = {}
+    self.selection_strip.placeholder_message = "Sample N/A"
     self.selection_strip:update()  
     return 
   end        
@@ -648,6 +671,16 @@ function SSK_Gui:update_selection_strip()
   local buffer = sample.sample_buffer
   local range = xSampleBuffer.get_selection_range(buffer) 
   local is_fully_looped = xSample.is_fully_looped(sample)
+
+  -- abort if too small a selection 
+  local sel_ratio = range/buffer.number_of_frames
+  print("sel_ratio",sel_ratio)
+  if (sel_ratio < SSK_Gui.MIN_SELECTION_RATIO) then 
+    self.selection_strip.items = {}
+    self.selection_strip.placeholder_message = "Selection is too small to display"
+    self.selection_strip:update()  
+    return 
+  end
 
   -- required for weighing  
   local segment_length = nil
@@ -660,14 +693,14 @@ function SSK_Gui:update_selection_strip()
   -- different handling for OS Effects 
   -- (avoid rounding artifacts)
   local as_os_fx = self.owner:display_selection_as_os_fx()
-  local get_segment_length = function(idx)
-    local sel_offset = self.owner.sel_length_offset
-    local frame_start = xSampleBuffer.get_frame_by_offset(buffer,idx*sel_offset)
-    local frame_end = xSampleBuffer.get_frame_by_offset(buffer,(idx+1)*sel_offset)
-    return frame_end-frame_start
+
+  -- check for perfect lead/trail (used with 0S Effect)
+  local is_perfect_lead,is_perfect_trail = false,false
+  if as_os_fx then 
+    is_perfect_lead = self.owner:is_perfect_lead() 
+    is_perfect_trail = self.owner:is_perfect_trail()
+    print("is_perfect_lead,is_perfect_trail",is_perfect_lead,is_perfect_trail)
   end
-  local is_perfect_lead = self.owner.sel_start_offset%self.owner.sel_length_offset == 0
-  local is_perfect_trail = 256%(self.owner.sel_start_offset+self.owner.sel_length_offset) == 0
 
   if (range == buffer.number_of_frames) and not is_fully_looped then 
     -- define leading/trailing as space before/after loop 
@@ -685,9 +718,6 @@ function SSK_Gui:update_selection_strip()
     self.display_buffer_as_loop = false
     segment_length = range
 
-    -- before testing for leading/trailing space, check for perfect lead:
-    -- in such a case, leading space is purely a result of rounding artifacts
-    -- check if OS values (start/length) takes us back to 0   
     local num_lead_segments = function()
       return self.owner.sel_start_offset/self.owner.sel_length_offset
     end
@@ -738,29 +768,47 @@ function SSK_Gui:update_selection_strip()
         trail = buffer.number_of_frames - trail
       end 
     end 
-  end        
-  
-  -- create weights, check if active/looped segment 
+  end
+
+  print("num_segments",num_segments)
+  -- we have our segments - now create the weights
+  -- check if active/looped segment 
   local weights = {}  -- table<vButtonStripMember> 
   local tmp_frame = 0
   if lead then 
     table.insert(weights,vButtonStripMember{weight = lead})
-    -- segment is selected?
-    -- if (buffer.selection_start == 1 and buffer.selection_end == lead) then 
-    --   selected_segment_index = 1
-    -- end 
     tmp_frame = lead
   end   
   for k = 1, num_segments do 
 
-    if as_os_fx and is_perfect_lead then
-      segment_length = get_segment_length(k)
+    local seg_start,seg_end
+    if as_os_fx and not self.display_buffer_as_loop then 
+      if (num_segments == 1) then 
+        segment_length = range
+      elseif is_perfect_lead then
+        -- get length for each individual segment
+        -- (avoid rounding artifacts)
+        seg_start,seg_end = self.owner:get_nth_segment_by_offset(k-1,num_segments)        
+        segment_length = seg_end-seg_start
+        print("segment_length",segment_length,seg_end,seg_start)
+      end
     end
 
     table.insert(weights,vButtonStripMember{weight = segment_length})
+
+    -- figure out if selected
     if self.display_buffer_as_loop then
-      selected_segment_index = 0
-    else
+      selected_segment_index = 0 -- never selected in loop mode 
+    elseif seg_start and seg_end then 
+      -- previous computed offset length 
+      --print("*** buffer.selection_start",buffer.selection_start,seg_start)
+      --print("*** buffer.selection_end",buffer.selection_end,seg_end)
+      if (buffer.selection_start == seg_start 
+        and buffer.selection_end == seg_end) 
+      then 
+        selected_segment_index = k 
+      end 
+    else -- normal, sample based 
       if (buffer.selection_start == tmp_frame+1 
         and buffer.selection_end == tmp_frame + segment_length) 
       then 
@@ -780,17 +828,17 @@ function SSK_Gui:update_selection_strip()
   end 
   if trail then 
     table.insert(weights,vButtonStripMember{weight = trail})
-    -- if (buffer.selection_start == trail 
-    --   and buffer.selection_end == buffer.number_of_frames) 
-    -- then 
-    --   selected_segment_index = num_segments + 1
-    -- end     
   end 
   
   local tmp_frame = 0
   for k,v in ipairs(weights) do
+
+    local sel_end = tmp_frame+v.weight
+  
     -- selected when range matches, and not the only one
     local fully_selected = (#weights == 1) and true or false
+    --local length_equal_to_range = (v.weight == range)
+    --print("range,weight,length_equal_to_range",range,v.weight,length_equal_to_range)
     local is_looped = (looped_segment_index == k)
     local is_lead = lead and (k == 1)
     local is_trail = trail and (k == #weights)
@@ -801,23 +849,21 @@ function SSK_Gui:update_selection_strip()
     if self.display_buffer_as_loop then 
       title_txt = is_looped and "Loop" or "-"
     else
-      title_txt = tostring(k)
+      --title_txt = ("%d%s"):format(k,length_equal_to_range and "" or "~") 
+      title_txt = ("%d"):format(k) 
     end
     local subline_txt = is_looped and "⟲" or is_lead and "‹‹" or is_trail and "››" or ""
     
     -- configure item 
-    local sel_start =  tmp_frame
-    local sel_length = tmp_frame+v.weight
-    local sel_end = v.weight
     v.text = not fully_selected and ("%s\n%s"):format(title_txt,subline_txt) or "-"
-    v.tooltip = ("Segment #%d: [%d - %d] %d"):format(k,sel_start,sel_length,sel_end)
+    v.tooltip = ("Segment #%d: [%d - %d] %d"):format(k,tmp_frame,sel_end,v.weight)
     v.color = is_selected and SSK_Gui.COLOR_SELECTED or 
       is_looped and SSK_Gui.COLOR_NONE or SSK_Gui.COLOR_DESELECTED
 
     tmp_frame = tmp_frame + v.weight
 
   end 
-
+  print("weights...",rprint(weights))
   self.selection_strip.items = weights
   self.selection_strip:update()
 
@@ -828,7 +874,6 @@ end
 
 function SSK_Gui:update_selection_length()
   TRACE("SSK_Gui:update_selection_length()")
-
   if self.owner:display_selection_as_samples() then 
     self.vb.views.ssk_selection_start.value = tostring(self.owner.sel_start_frames) 
     self.vb.views.ssk_selection_length.value = tostring(self.owner.sel_length_frames) 
@@ -836,14 +881,115 @@ function SSK_Gui:update_selection_length()
     self.vb.views.ssk_selection_start.value = tostring(self.owner.sel_start_beats) 
     self.vb.views.ssk_selection_length.value = tostring(self.owner.sel_length_beats) 
   elseif self.owner:display_selection_as_os_fx() then
-    self.vb.views.ssk_selection_start.value = tostring(self.owner.sel_start_offset) 
-    self.vb.views.ssk_selection_length.value = tostring(self.owner.sel_length_offset) 
+    self.vb.views.ssk_selection_start.value = ("0x%X"):format(self.owner.sel_start_offset) 
+    self.vb.views.ssk_selection_length.value = ("0x%X"):format(self.owner.sel_length_offset) 
   else 
     self.vb.views.ssk_selection_start.value = ""
     self.vb.views.ssk_selection_length.value = ""
   end
-
 end 
+
+---------------------------------------------------------------------------------------------------
+-- update the selection start inputs via infinite spinner 
+
+function SSK_Gui:set_selection_start_via_spinner(val)
+  print("SSK_Gui:set_selection_start_via_spinner(val)",val)
+
+  local sync_enabled = prefs.sync_with_renoise.value
+  local buffer = self.owner.sample.sample_buffer
+
+  if (self.owner:display_selection_as_samples() 
+    or self.owner:display_selection_as_beats())
+  then 
+    local min = 1
+    local max = buffer.number_of_frames
+    local sel_start = cLib.clamp_value(self.owner.sel_start_frames + val,min,max)
+    self.owner.sel_start_frames = sel_start
+    if buffer and sync_enabled then
+      self.owner:apply_selection_range(self.owner.sel_length_frames,sel_start)
+    end
+  elseif self.owner:display_selection_as_os_fx() then
+    -- use 16 as right-click increment/decrement
+    val = (val == -10) and -0x10 or (val == 10) and 0x10 or val
+    local start_offset = self.owner.sel_start_offset
+    local num_frames = buffer.number_of_frames
+    if (num_frames < 0x100) then 
+      -- for small buffers, look up nearest start 
+      if (val > 0) then
+        start_offset = xSampleBuffer.get_next_offset(num_frames,start_offset+val-1)
+      else
+        start_offset = xSampleBuffer.get_previous_offset(num_frames,start_offset+val+1)
+      end
+    else
+      start_offset = self.owner.sel_start_offset + val
+    end 
+    if start_offset then
+      self.owner.sel_start_offset = cLib.clamp_value(start_offset,0,256)    
+      print("self.owner.sel_start_offset POST",self.owner.sel_start_offset)
+      if buffer and sync_enabled then
+        local sel_start = xSampleBuffer.get_frame_by_offset(buffer,self.owner.sel_start_offset)
+        self.owner:apply_selection_range(self.owner.sel_length_frames,sel_start)
+      end
+    end
+  end
+
+end
+
+---------------------------------------------------------------------------------------------------
+-- update the selection length inputs via infinite spinner 
+
+function SSK_Gui:set_selection_length_via_spinner(val)
+  print("SSK_Gui:set_selection_length_via_spinner(val)",val)
+
+  local sync_enabled = prefs.sync_with_renoise.value
+  local buffer = self.owner.sample.sample_buffer
+
+  if (self.owner:display_selection_as_samples() 
+    or self.owner:display_selection_as_beats())
+  then 
+    local min = 1
+    local max = buffer.number_of_frames
+    self.owner.sel_length_frames = cLib.clamp_value(self.owner.sel_length_frames + val,min,max)
+    if buffer and sync_enabled then
+      local sel_length = self.owner.sel_length_frames
+      self.owner:apply_selection_range(sel_length)
+    end
+  elseif self.owner:display_selection_as_os_fx() then
+    -- use 16 as right-click increment/decrement
+    val = (val == -10) and -0x10 or (val == 10) and 0x10 or val
+    local length_offset = 0 
+    local num_frames = buffer.number_of_frames
+    if (num_frames < 0x100) then 
+      -- for small buffers, look up nearest length 
+      -- search from current end point
+      local end_offset = self.owner.sel_start_offset+self.owner.sel_length_offset
+      if (val > 0) then
+        end_offset = xSampleBuffer.get_next_offset(num_frames,end_offset+val-1)
+      else
+        end_offset = xSampleBuffer.get_previous_offset(num_frames,end_offset+val+1)
+      end
+      print("set_selection_length_via_spinner - end_offset",end_offset)
+      if end_offset then 
+        length_offset = end_offset - self.owner.sel_start_offset
+      end
+    else
+      length_offset = self.owner.sel_length_offset + val
+    end 
+    if length_offset then
+      self.owner.sel_length_offset = cLib.clamp_value(length_offset,0,256)    
+      print("self.owner.sel_length_offset POST",self.owner.sel_length_offset)
+      if buffer and sync_enabled then
+        local end_offset = self.owner.sel_start_offset+self.owner.sel_length_offset
+        print("end_offset",end_offset)
+        local sel_start = xSampleBuffer.get_frame_by_offset(buffer,self.owner.sel_start_offset)
+        local sel_end = xSampleBuffer.get_frame_by_offset(buffer,end_offset)
+        local sel_length = sel_end-sel_start
+        self.owner:apply_selection_range(sel_length)
+      end
+    end
+  end
+
+end
 
 ---------------------------------------------------------------------------------------------------
 -- update the selected range readout 
@@ -858,24 +1004,29 @@ function SSK_Gui:update_selection_header()
     sel_start = buffer.selection_start - 1
     sel_end = buffer.selection_end
     sel_length = sel_end - sel_start
+    local sel_hz = self.owner:get_hz_from_selection()
     if self.owner:display_selection_as_os_fx() then 
       sel_start = xSampleBuffer.get_offset_by_frame(buffer,buffer.selection_start)
       sel_end = self.owner:obtain_sel_end_offset(buffer)
       sel_length = sel_end - sel_start
-      vb_textfield.text = (" [%X - %X] (%X)"):format(sel_start,sel_end,sel_length)
+      vb_textfield.text = (" [%X - %X] (%X) - %.2fHz"):format(sel_start,sel_end,sel_length,sel_hz)
     elseif self.owner:display_selection_as_samples() then 
-      vb_textfield.text = (" [%d - %d] (%d)"):format(sel_start,sel_end,sel_length)
+      vb_textfield.text = (" [%d - %d] (%d) - %.2fHz"):format(sel_start,sel_end,sel_length,sel_hz)
     elseif self.owner:display_selection_as_beats() then
       sel_start = 1 + xSampleBuffer.get_beat_by_frame(buffer,sel_start)
       sel_end = 1 + xSampleBuffer.get_beat_by_frame(buffer,sel_end)
       sel_length = 1 + sel_end - sel_start
-      vb_textfield.text = (" [%s - %s] (%s)"):format(
+      vb_textfield.text = (" [%s - %s] (%s) - %.2fHz"):format(
         cString.format_beat(sel_start),
         cString.format_beat(sel_end),
-        cString.format_beat(sel_length))
+        cString.format_beat(sel_length),
+        sel_hz)
     end
+    vb_textfield.tooltip = "Display selection [Start - End] (Length)"
+                        .."\n+ Frequency of selection in Hz (including transpose/fine-tune) "
   else 
     vb_textfield.text = ""
+    vb_textfield.tooltip = ""
   end
 
 end 
@@ -957,8 +1108,8 @@ function SSK_Gui:build_keyzone()
 
   self.vkeyzone = SSK_Gui_Keyzone{
     vb = self.vb,
-    width = 300,
-    height = 200,
+    width = SSK_Gui.KEYZONE_WIDTH,
+    height = SSK_Gui.KEYZONE_HEIGHT,
     note_steps = prefs.multisample_note_steps.value,
     note_min = prefs.multisample_note_min.value,
     note_max = prefs.multisample_note_max.value,
@@ -971,8 +1122,15 @@ function SSK_Gui:build_keyzone()
     id = "ssk_multisample_editor",
     vb:space{
       width = 3,
+      height = SSK_Gui.KEYZONE_HEIGHT+3,
     },   
-    self.vkeyzone.view,
+    vb:column{
+      self.vkeyzone.view,
+      vb:space{
+        height = 1,
+        width = SSK_Gui.KEYZONE_WIDTH+3,
+      },
+    },
     vb:column{
       vb:text{
         text = "Note Range"
@@ -982,7 +1140,7 @@ function SSK_Gui:build_keyzone()
           min = xKeyZone.MIN_NOTE,
           max = xKeyZone.MAX_NOTE,
           bind = prefs.multisample_note_min,
-          width = SSK_Gui.SMALL_LABEL_WIDTH,
+          width = SSK_Gui.KEYZONE_LABEL_WIDTH,
           tostring = function(val)
             return xNoteColumn.note_value_to_string(val)
           end,
@@ -990,7 +1148,7 @@ function SSK_Gui:build_keyzone()
             return xNoteColumn.note_string_to_value(val)
           end,
           notifier = function(val)
-            print("note_min notifier...",val)
+            --print("note_min notifier...",val)
             self.vkeyzone.note_min = val
           end
         },
@@ -998,7 +1156,7 @@ function SSK_Gui:build_keyzone()
           min = xKeyZone.MIN_NOTE,
           max = xKeyZone.MAX_NOTE,            
           bind = prefs.multisample_note_max,
-          width = SSK_Gui.SMALL_LABEL_WIDTH,
+          width = SSK_Gui.KEYZONE_LABEL_WIDTH,
           tostring = function(val)
             return xNoteColumn.note_value_to_string(val)
           end,
@@ -1014,13 +1172,13 @@ function SSK_Gui:build_keyzone()
         vb:text{
           text = "Steps",
           align = "right",
-          width = SSK_Gui.SMALL_LABEL_WIDTH,
+          width = SSK_Gui.KEYZONE_LABEL_WIDTH,
         },
         vb:valuebox{
           min = xKeyZone.MIN_NOTE_STEPS,
           max = xKeyZone.MAX_NOTE_STEPS,          
           bind = prefs.multisample_note_steps,
-          width = SSK_Gui.SMALL_LABEL_WIDTH,
+          width = SSK_Gui.KEYZONE_LABEL_WIDTH,
           notifier = function(val)
             self.vkeyzone.note_steps = val
           end          
@@ -1034,7 +1192,7 @@ function SSK_Gui:build_keyzone()
           min = xKeyZone.MIN_VEL,
           max = xKeyZone.MAX_VEL,            
           bind = prefs.multisample_vel_min,
-          width = SSK_Gui.SMALL_LABEL_WIDTH,
+          width = SSK_Gui.KEYZONE_LABEL_WIDTH,
           tostring = function(val)
             return ("%02X"):format(val)
           end,
@@ -1049,7 +1207,7 @@ function SSK_Gui:build_keyzone()
           min = xKeyZone.MIN_VEL,
           max = xKeyZone.MAX_VEL,                        
           bind = prefs.multisample_vel_max,
-          width = SSK_Gui.SMALL_LABEL_WIDTH,
+          width = SSK_Gui.KEYZONE_LABEL_WIDTH,
           tostring = function(val)
             return ("%02X"):format(val)
           end,
@@ -1065,13 +1223,13 @@ function SSK_Gui:build_keyzone()
         vb:text{
           text = "Steps",
           align = "right",
-          width = SSK_Gui.SMALL_LABEL_WIDTH,
+          width = SSK_Gui.KEYZONE_LABEL_WIDTH,
         },
         vb:valuebox{
           min = xKeyZone.MIN_VEL_STEPS,
           max = xKeyZone.MAX_VEL_STEPS,
           bind = prefs.multisample_vel_steps,
-          width = SSK_Gui.SMALL_LABEL_WIDTH,
+          width = SSK_Gui.KEYZONE_LABEL_WIDTH,
           notifier = function(val)
             self.vkeyzone.vel_steps = val
           end                    
@@ -1083,6 +1241,33 @@ function SSK_Gui:build_keyzone()
 end
 
 ---------------------------------------------------------------------------------------------------
+-- handle clicks on the selection strip 
+
+function SSK_Gui:select_by_segment(idx,strip)
+  TRACE("SSK_Gui:select_by_segment(idx,strip)",idx,strip)
+
+  local buffer = self.owner:get_sample_buffer()
+  local sample = self.owner.sample 
+  if not buffer or not sample then 
+    return
+  end 
+  --local as_os_fx = self.owner:display_selection_as_os_fx()
+  local is_perfect_lead = self.owner:is_perfect_lead()
+  local is_perfect_trail = self.owner:is_perfect_trail()
+
+  if is_perfect_lead and is_perfect_trail and not self.display_buffer_as_loop then 
+    -- select by offset index 
+    local seg_start,seg_end = self.owner:get_nth_segment_by_offset(idx-1,#strip.items)
+    sample.sample_buffer.selection_range = {seg_start,seg_end}
+  else
+    -- select by assigned weight 
+    local item = strip.items[idx]
+    local start = strip:get_item_offset(idx)
+    sample.sample_buffer.selection_range = {start+1,start+item.weight}
+  end
+end
+
+---------------------------------------------------------------------------------------------------
 
 function SSK_Gui:build_buffer_panel()
 
@@ -1090,12 +1275,9 @@ function SSK_Gui:build_buffer_panel()
     vb = self.vb,
     height = SSK_Gui.STRIP_HEIGHT,
     width = SSK_Gui.DIALOG_INNER_WIDTH - 75,
-    placeholder_message = "Sample N/A",
+    spacing = vLib.NULL_SPACING,    
     pressed = function(idx,_strip_)
-      local item = _strip_.items[idx]
-      local start = _strip_:get_item_offset(idx)
-      self.owner.sample.sample_buffer.selection_range = {start+1,start+item.weight}
-      --self.segment_index = idx
+      self:select_by_segment(idx,_strip_)
     end,
     released = function(idx)
     end,
@@ -1261,7 +1443,6 @@ function SSK_Gui:build_selection_panel()
         end,prefs.display_selection_panel),          
         self.vb:text{
           id = "ssk_selection_header_txt",
-          tooltip = "The current selection - start/end, length",
           width = SSK_Gui.DIALOG_INNER_WIDTH - 200,
         },
       },    
@@ -1277,6 +1458,7 @@ function SSK_Gui:build_selection_panel()
       },  
       self.vb:popup{
         id = "ssk_selection_unit_popup",
+        tooltip = "Choose how the selection should be displayed",
         items = {
           "OS Effect",
           "Beats",
@@ -1372,6 +1554,8 @@ function SSK_Gui:build_generate_panel()
         },
         self.vb:column{
           self.vb:row{
+            tooltip = "When enabled, changes to cycle/shift etc. will automatically"
+                    .."\ncause the selected waveform to be re-calculated",            
             self.vb:checkbox{
               id = 'ssk_auto_generate',
               bind = prefs.auto_generate,
@@ -1382,6 +1566,7 @@ function SSK_Gui:build_generate_panel()
             },  
           },         
           self.vb:row{
+            tooltip = "When enabled, waveforms will be generated using band-limiting",
             self.vb:checkbox{
               id = 'band_limited',
               bind = prefs.band_limited,
@@ -1444,6 +1629,27 @@ end
 
 
 ---------------------------------------------------------------------------------------------------
+-- build generic "infinite spinner"
+
+function SSK_Gui:build_spinner(id,fn,tooltip)
+  return self.vb:valuebox{
+    id = id,
+    tooltip = tooltip,
+    width = 20,
+    height = 16,
+    min = -99,
+    max = 99,
+    notifier = function(val)
+      if not self.reset_spinner_requested then
+        fn(val) 
+        self.reset_spinner_requested = true
+      end
+    end,
+  }
+end
+
+---------------------------------------------------------------------------------------------------
+-- build generic percent valuebox
 
 function SSK_Gui:build_percent_factor(label,obs)  
 
@@ -1671,26 +1877,32 @@ function SSK_Gui:build_selection_start_row()
         self.owner:obtain_sel_start_from_editor()        
       end,
     },    
-    self.vb:textfield{ 
-      id = "ssk_selection_start",
-      width = SSK_Gui.INPUT_WIDTH,
-      tooltip = SSK_Gui.MSG_GET_LENGTH_BEAT_TIP, 
-      notifier = function(x)
-        print("ssk_selection_start notifier",x)
-        local buffer = self.owner:get_sample_buffer()
-        if not buffer then 
-          return
+    self.vb:row{
+      spacing = vLib.NULL_SPACING,
+      self.vb:textfield{ 
+        id = "ssk_selection_start",
+        width = SSK_Gui.INPUT_WIDTH,
+        tooltip = SSK_Gui.MSG_GET_LENGTH_BEAT_TIP, 
+        notifier = function(x)
+          --print("ssk_selection_start notifier",x)
+          local buffer = self.owner:get_sample_buffer()
+          if not buffer then 
+            return
+          end
+          local is_start = true -- allow first frame
+          local offset,beat,frame = self.owner:interpret_selection_input(x,is_start)
+          if (not frame or not beat or not offset) then 
+            renoise.app():show_error(SSK_Gui.MSG_GET_LENGTH_FRAME_ERR)
+          else 
+            self.owner.sel_start_frames = frame
+            self.owner.sel_start_beats = beat
+            self.owner.sel_start_offset = offset
+          end
         end
-        local is_start = true -- allow first frame
-        local offset,beat,frame = self.owner:interpret_selection_input(x,is_start)
-        if (not frame or not beat or not offset) then 
-          renoise.app():show_error(SSK_Gui.MSG_GET_LENGTH_FRAME_ERR)
-        else 
-          self.owner.sel_start_frames = frame
-          self.owner.sel_start_beats = beat
-          self.owner.sel_start_offset = offset
-        end
-      end
+      },
+      self:build_spinner("ssk_sel_start_spinner",function(val)
+        self:set_selection_start_via_spinner(val)
+      end,"Increase/decrease the selection start"),    
     },
     self.vb:button{
       text = "Set",
@@ -1724,25 +1936,31 @@ function SSK_Gui:build_selection_length_row()
         self.owner:obtain_sel_length_from_editor()        
       end,
     },    
-    self.vb:textfield{ 
-      id = "ssk_selection_length",
-      width = SSK_Gui.INPUT_WIDTH,
-      tooltip = SSK_Gui.MSG_GET_LENGTH_BEAT_TIP, 
-      notifier = function(x)
-        print("ssk_selection_length notifier",x)
-        local buffer = self.owner:get_sample_buffer()
-        if not buffer then 
-          return
+    self.vb:row{
+      spacing = vLib.NULL_SPACING,
+      self.vb:textfield{ 
+        id = "ssk_selection_length",
+        width = SSK_Gui.INPUT_WIDTH,
+        tooltip = SSK_Gui.MSG_GET_LENGTH_BEAT_TIP, 
+        notifier = function(x)
+          --print("ssk_selection_length notifier",x)
+          local buffer = self.owner:get_sample_buffer()
+          if not buffer then 
+            return
+          end
+          local offset,beat,frame = self.owner:interpret_selection_input(x)
+          if (not frame or not beat or not offset) then 
+            renoise.app():show_error(SSK_Gui.MSG_GET_LENGTH_FRAME_ERR)
+          else 
+            self.owner.sel_length_frames = frame
+            self.owner.sel_length_beats = beat
+            self.owner.sel_length_offset = offset
+          end
         end
-        local offset,beat,frame = self.owner:interpret_selection_input(x)
-        if (not frame or not beat or not offset) then 
-          renoise.app():show_error(SSK_Gui.MSG_GET_LENGTH_FRAME_ERR)
-        else 
-          self.owner.sel_length_frames = frame
-          self.owner.sel_length_beats = beat
-          self.owner.sel_length_offset = offset
-        end
-      end
+      },
+      self:build_spinner("ssk_sel_length_spinner",function(val)
+        self:set_selection_length_via_spinner(val)
+      end,"Increase/decrease the selection length"),
     },
     self.vb:button{
       text = "Set",
@@ -1921,6 +2139,7 @@ function SSK_Gui:build_duty_cycle()
 
   return self.vb:column{
     self.vb:row{
+      tooltip = "When enabled, duty cycle applies to the generated waveforms",
       self.vb:checkbox{
         id = 'duty_onoff',
         bind = prefs.mod_duty_onoff,
@@ -1956,7 +2175,7 @@ function SSK_Gui:build_duty_cycle()
       },
       self.vb:button{
         text = "Reset",
-        tooltip = "Reset values.",
+        tooltip = "Reset duty cycle values.",
         notifier = function()
           self.vb.views.duty_fiducial.value = 50
           self.vb.views.duty_variation.value = 0
@@ -2015,7 +2234,6 @@ function SSK_Gui:build_duty_cycle()
 end 
 
 ---------------------------------------------------------------------------------------------------
--- White noise
 
 function SSK_Gui:build_white_noise()
   return self.vb:button{
@@ -2031,7 +2249,6 @@ function SSK_Gui:build_white_noise()
 end
 
 ---------------------------------------------------------------------------------------------------
-  -- Brown noise
 
 function SSK_Gui:build_brown_noise()
   return self.vb:button{
@@ -2047,7 +2264,6 @@ function SSK_Gui:build_brown_noise()
 end 
 
 ---------------------------------------------------------------------------------------------------
--- Violet noise
 
 function SSK_Gui:build_violet_noise()
   return self.vb:button{
@@ -2063,7 +2279,7 @@ function SSK_Gui:build_violet_noise()
 end 
 
 ---------------------------------------------------------------------------------------------------
-  -- Pink noise (Unfinished)
+-- Pink noise (Unfinished)
 --[[
 function SSK_Gui:build_pink_noise()  
   return self.vb:button{
@@ -2079,7 +2295,8 @@ end
 ]]
 
 ---------------------------------------------------------------------------------------------------
-  -- Phase shift 1/24 +
+-- Phase shift 1/24 +
+
 function SSK_Gui:build_phase_shift_plus()  
   return self.vb:button{
     id = "ssk_generate_shift_plus_bt",
@@ -2093,7 +2310,8 @@ function SSK_Gui:build_phase_shift_plus()
 end  
 
 ---------------------------------------------------------------------------------------------------
-  -- Phase shift 1/24 +
+-- Phase shift 1/24 +
+
 function SSK_Gui:build_phase_shift_minus()  
   return self.vb:button{
     id = "ssk_generate_shift_minus_bt",
@@ -2206,7 +2424,6 @@ end
 function SSK_Gui:build_pd_copy()
   return self.vb:button{
     id = "ssk_generate_pd_copy_bt",
-    --bitmap = self.btmp.pd_copy,
     text = "PD Copy",
     width = SSK_Gui.WIDE_BT_WIDTH,
     height = SSK_Gui.TALL_BT_HEIGHT,
@@ -2287,6 +2504,7 @@ end
 function SSK_Gui:build_pd_duty_cycle()
   return self.vb:column{
     self.vb:row{
+      tooltip = "When enabled, duty cycle applies to the generated waveforms",      
       self.vb:checkbox{
         id = 'pd_duty_onoff',
         bind = prefs.mod_pd_duty_onoff,
@@ -2523,6 +2741,11 @@ end
 function SSK_Gui:idle_notifier()
 
   if self.dialog then
+    if self.reset_spinner_requested then 
+      self.vb.views.ssk_sel_start_spinner.value = 0
+      self.vb.views.ssk_sel_length_spinner.value = 0
+      self.reset_spinner_requested = false 
+    end
     if self.update_strip_requested then 
       self.update_strip_requested = false
       self:update_selection_strip()

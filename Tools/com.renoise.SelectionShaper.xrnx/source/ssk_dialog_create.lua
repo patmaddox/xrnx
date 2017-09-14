@@ -42,8 +42,7 @@ function SSK_Dialog_Create:show()
   vDialog.show(self)
 
   local defaults = xSampleBuffer.get_default_properties()
-  print("defaults...")
-  rprint(defaults)
+  --print("defaults...",rprint(defaults))
   self:set_bit_depth(defaults.bit_depth)
   self:set_sample_rate(defaults.sample_rate)
   self:set_num_channels(defaults.number_of_channels)
@@ -149,7 +148,7 @@ end
 function SSK_Dialog_Create:set_bit_depth(val)
   local ctrl = self.vb.views.ssk_bit_depth
   local idx = table.find(xSampleBuffer.BIT_DEPTH,val)
-  print("set_bit_depth() val,idx",val,idx)
+  --print("set_bit_depth() val,idx",val,idx)
   if (idx) then
     ctrl.value = idx-1
   end
@@ -163,7 +162,7 @@ end
 function SSK_Dialog_Create:set_sample_rate(val)
   local ctrl = self.vb.views.ssk_sample_rate
   local idx = table.find(xSampleBuffer.SAMPLE_RATE,val)
-  print("set_sample_rate() val,idx",val,idx)
+  --print("set_sample_rate() val,idx",val,idx)
   ctrl.value = idx
 end
 
