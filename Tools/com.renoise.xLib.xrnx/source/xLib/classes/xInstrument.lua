@@ -380,12 +380,12 @@ function xInstrument.clone_sample(
   if not new_sample then 
     error("Expected a new sample")
   end 
-  print("new_sample",new_sample)
+  --print("new_sample",new_sample)
 
   -- detect if instrument is in drumkit mode
   -- (usually, a newly inserted sample occupies the entire keyzone...)
   local drumkit_mode = not xSampleMapping.has_full_note_range(new_sample.sample_mapping)
-  print("drumkit_mode",drumkit_mode)
+  --print("drumkit_mode",drumkit_mode)
 
   -- initialize some properties before copying...
   --new_sample.loop_start = 1
