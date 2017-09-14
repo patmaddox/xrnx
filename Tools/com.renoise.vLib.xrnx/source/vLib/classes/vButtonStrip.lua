@@ -20,7 +20,8 @@ class 'vButtonStripMember'
 function vButtonStripMember:__init(...)
 
   local args = cLib.unpack_args(...)
-  
+  assert(type(args.weight)=="number","Expected 'weight' to be a number")
+
   -- number 
   self.weight = args.weight
   -- look & feel
@@ -30,20 +31,46 @@ function vButtonStripMember:__init(...)
 
 end
 
+---------------------------------------------------------------------------------------------------
+
+function vButtonStripMember:__tostring()
+
+  return type(self).."{"
+    .."weight:"..tostring(self.weight)
+    ..", text:"..tostring(self.text)
+    ..", color:"..tostring(self.color)
+    ..", tooltip:"..tostring(self.tooltip)
+    .."}"
+end
+
 
 --=================================================================================================
 
 class 'vButtonStrip' (vControl)
 
 vButtonStrip.MIN_SEGMENT_W = 5
+vButtonStrip.DEFAULT_WIDTH = 100
 
 ---------------------------------------------------------------------------------------------------
 
 function vButtonStrip:__init(...)
 
+  -- properties -----------------------
+
   local args = cLib.unpack_args(...)
 
-  -- properties -----------------------
+  if not args.width then 
+    args.width = vButtonStrip.DEFAULT_WIDTH
+  end 
+  if not args.height then 
+    args.height = renoise.ViewBuilder.DEFAULT_CONTROL_HEIGHT
+  end 
+  if not args.spacing then 
+    args.spacing = vLib.NULL_SPACING
+  end
+  if not args.min_segment_size then 
+    args.min_segment_size = vButtonStrip.MIN_SEGMENT_W
+  end
 
   -- function, @param idx (number)
   self.pressed = args.pressed
@@ -51,6 +78,12 @@ function vButtonStrip:__init(...)
   self.released = args.released
   -- function, @param idx (number)
   self.notifier = args.notifier
+  -- number 
+  self.spacing = property(self.get_spacing,self.set_spacing)
+  self.spacing_observable = renoise.Document.ObservableNumber(args.spacing)
+  -- number 
+  self.min_segment_size = property(self.get_min_segment_size,self.set_min_segment_size)
+  self.min_segment_size_observable = renoise.Document.ObservableNumber(args.min_segment_size)
 
   -- table<vButtonStripMember>
   self.items = property(self.get_items,self.set_items)
@@ -95,12 +128,37 @@ function vButtonStrip:set_items(items)
 end
 
 ---------------------------------------------------------------------------------------------------
+
+function vButtonStrip:get_spacing()
+  return self.spacing_observable.value
+end
+
+function vButtonStrip:set_spacing(val)
+  TRACE("vButtonStrip:set_spacing",val)
+  self.spacing_observable.value = val 
+  self.vb_row.spacing = val
+  self:request_update()
+end
+
+---------------------------------------------------------------------------------------------------
+
+function vButtonStrip:get_min_segment_size()
+  return self.min_segment_size_observable.value
+end
+
+function vButtonStrip:set_min_segment_size(val)
+  TRACE("vButtonStrip:set_min_segment_size",val)
+  self.min_segment_size_observable.value = val 
+  self:request_update()
+end
+
+---------------------------------------------------------------------------------------------------
 -- Super methods 
 ---------------------------------------------------------------------------------------------------
 
 function vButtonStrip:set_width(val)
   vControl.set_width(self,val)
-  self.vb_space.width = val
+  --self.vb_space.width = val
   self:request_update()
 end
 
@@ -129,11 +187,13 @@ function vButtonStrip:build()
 
 	local vb = self.vb  
   if not self.view then
-    self.vb_space = vb:space{width = self.width}
-    self.vb_row = vb:row{spacing = vLib.NULL_SPACING}
+    --self.vb_space = vb:space{width = self.width}
+    self.vb_row = vb:row{
+      spacing = self.spacing
+    }
     self.view = vb:column{
       id = self.id,
-      self.vb_space,
+      --self.vb_space,
       self.vb_row,
     }
   end
@@ -204,34 +264,40 @@ function vButtonStrip:update()
 
   if (#self.items == 0) then 
     self:show_placeholder(self.placeholder_message)
-  elseif ((self.width/vButtonStrip.MIN_SEGMENT_W) < #self.items) then 
+  elseif ((self.width/self.min_segment_size) < #self.items) then 
     self:show_placeholder("Not able to display this many items")
   else
-    if (#self.items > 0) then
-      local vb = self.vb
-      -- weights are computed/OK, now render  
-      local combined = self:get_combined_weight()
-      local unit_w = self.width/combined
-      local fraction = 0
-      for k,v in ipairs(self.items) do 
-        local bt_width = cLib.round_value(3 + math.max(1,v.weight*unit_w))
+    local vb = self.vb
+    -- weights are computed/OK, now calculate width of items 
+    local combined = self:get_combined_weight()
+    local unit_w = self.width/combined
+    local widths = {}
+    for k,v in ipairs(self.items) do 
+      table.insert(widths,v.weight*unit_w)
+    end 
+    --print("widths PRE",rprint(widths))
+    widths = vLib.calculate_sizes(widths,self.width,self.spacing,self.min_segment_size)
+    --print("widths POST",rprint(widths))
+    -- we have our widths, now render...
+    for k,v in ipairs(self.items) do
         local bt = self.vb:button{
-          text = v.text,
-          color = v.color,
-          tooltip = v.tooltip,
-          pressed = function()
-            self:press(k)
-          end,
-          released = function()
-            self:release(k)
-          end,
-        }
-        bt.width = math.max(vButtonStrip.MIN_SEGMENT_W,bt_width)
-        bt.height = self.height
-        self.vb_row:add_child(bt)
-        table.insert(self.vb_strip_bts,bt)
-      end 
+        text = v.text,
+        color = v.color,
+        tooltip = v.tooltip,
+        pressed = function()
+          self:press(k)
+        end,
+        released = function()
+          self:release(k)
+        end,
+      }
+      -- note: setting size after text to retain dimensions
+      bt.width = widths[k]
+      bt.height = self.height
+      self.vb_row:add_child(bt)
+      table.insert(self.vb_strip_bts,bt)
     end
+
 
   end        
 
