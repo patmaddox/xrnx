@@ -63,7 +63,7 @@ function xKeyZone.find_mapping(mappings,note_range,velocity_range)
       if cLib.table_compare(note_range,v.note_range) then 
         if velocity_range then 
           if cLib.table_compare(velocity_range,v.velocity_range) then 
-            print("matched mapping",v)
+            --print("matched mapping",v)
             return v 
           end
         end 
@@ -100,8 +100,7 @@ function xKeyZone.create_multisample_layout(
   note_steps,note_min,note_max,
   vel_steps,vel_min,vel_max,
   extend_notes)
-
-  print("create_multisample_layout - note_min,note_max",note_min,note_max)
+  TRACE("xKeyZone.create_multisample_layout()",note_steps,note_min,note_max,vel_steps,vel_min,vel_max,extend_notes)
 
   local notes = xKeyZone.compute_multisample_notes(note_steps,note_min,note_max,extend_notes)
   local velocities = xKeyZone.compute_multisample_velocities(vel_steps,vel_min,vel_max)
@@ -190,7 +189,7 @@ function xKeyZone.compute_multisample_notes(note_steps,note_min,note_max,extend)
     note = new
   end
 
-  print("compute_multisample_notes rslt...",note_steps,note_min,note_max,extend,rprint(rslt))
+  --print("compute_multisample_notes rslt...",note_steps,note_min,note_max,extend,rprint(rslt))
   return rslt
 
 end
