@@ -361,7 +361,7 @@ end
 function xSample.get_transposed_frame(note_value,frame,sample)
   TRACE("xSample.get_transposed_frame(note_value,frame,sample)",note_value,frame,sample)
   
-  local transposed_note = xSample.get_transposed_note(note_value,sample)
+  local transposed_note = note_value + 48 + xSample.get_transpose(sample)
   local transp_hz = cLib.note_to_hz(transposed_note)
   local base_hz = cLib.note_to_hz(48) -- middle C-4 note
   local ratio = base_hz / transp_hz
@@ -371,18 +371,17 @@ function xSample.get_transposed_frame(note_value,frame,sample)
 end
 
 ---------------------------------------------------------------------------------------------------
--- obtain the transposed note. Final pitch of the played sample is:
---   played_note - mapping.base_note + sample.transpose + sample.finetune 
--- @param played_note (number)
+-- obtain the sample transpose - final pitch of the played sample is:
+--   mapping.base_note + sample.transpose + sample.finetune 
 -- @param sample (Renoise.Sample)
 -- @return number (natural number = pitch, fraction = finetune)
 
-function xSample.get_transposed_note(played_note,sample)
-  TRACE("xSample.get_transposed_note(played_note,sample)",played_note,sample)
+function xSample.get_transpose(sample)
+  TRACE("xSample.get_transpose(sample)",sample)
 
   local mapping_note = sample.sample_mapping.base_note
   local sample_transpose = sample.transpose + (sample.fine_tune/128)
-  return 48 + played_note - mapping_note + sample_transpose
+  return mapping_note + sample_transpose
 end
 
 ---------------------------------------------------------------------------------------------------
