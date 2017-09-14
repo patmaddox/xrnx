@@ -142,10 +142,10 @@ function xSampleBufferOperation:run()
 
   local new_sample = self.new_sample
   local new_buffer = self.new_buffer
-  print("xSampleBufferOperation:run() - new_sample,new_buffer",new_sample,new_buffer)
+  --print("xSampleBufferOperation:run() - new_sample,new_buffer",new_sample,new_buffer)
 
   for k,v in ipairs(self.operations) do 
-    print("run operation",k,v,type(v))
+    --print("run operation",k,v,type(v))
     if (type(v)=="function") then 
       -- anonymous function (no arguments)
       local success,err = pcall(function()
