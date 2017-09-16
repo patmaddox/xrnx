@@ -64,6 +64,11 @@ xSampleBuffer.SAMPLE_RATE = {
   192000,
 }
 
+xSampleBuffer.DEFAULT_BIT_DEPTH = 16
+xSampleBuffer.DEFAULT_SAMPLE_RATE = 48000
+xSampleBuffer.DEFAULT_NUM_CHANNELS = 1
+xSampleBuffer.DEFAULT_NUM_FRAMES = 168
+
 -- utility table for channel selecting
 xSampleBuffer.CH_UTIL = {
   --{0,0,{1,1}}, -- mono,selected_channel is 3
@@ -135,14 +140,12 @@ end
 -- @return table
 
 function xSampleBuffer.get_default_properties()
-
   return {
-    bit_depth = 16,
-    sample_rate = 44100,
-    number_of_channels = 1,
-    number_of_frames = 169,
+    bit_depth = xSampleBuffer.DEFAULT_BIT_DEPTH,
+    sample_rate = xSampleBuffer.DEFAULT_SAMPLE_RATE,
+    number_of_channels = xSampleBuffer.DEFAULT_NUM_CHANNELS,
+    number_of_frames = xSampleBuffer.DEFAULT_NUM_FRAMES,
   }
-
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -506,7 +509,7 @@ function xSampleBuffer.get_offset_indices(num_frames)
 
   local unit = num_frames/256
   local last_n = 0
-  local gaps,indices = {},{}
+  local gaps,indices = {},{0}
   for k = 1,256 do
     local val = unit*k
     local n = cLib.round_value(val)
@@ -543,6 +546,7 @@ function xSampleBuffer.get_next_offset(num_frames,offset)
   TRACE("xSampleBuffer.get_next_offset(num_frames,offset)",num_frames,offset)
 
   local indices,_ = xSampleBuffer.get_offset_indices(num_frames)
+  --print("indices",rprint(indices))
   return cTable.next(indices,offset)  
 
 end
@@ -586,7 +590,7 @@ function xSampleBuffer.get_offset_by_frame(buffer,frame)
     offset = cLib.round_value(offset)
   end 
 
-  print("*** get_offset_by_frame - in,out",frame,offset)  
+  --print("*** get_offset_by_frame - in,out",frame,offset)  
   return offset
   
 end
@@ -620,7 +624,7 @@ function xSampleBuffer.get_frame_by_offset(buffer,offset)
   local frame = 1+(offset*num_frames)/0x100
   frame = math.min(frame,num_frames)
 
-  print("*** get_frame_by_offset - in,out",offset,cLib.round_value(frame),frame)
+  --print("*** get_frame_by_offset - in,out",offset,cLib.round_value(frame),frame)
   return cLib.round_value(frame)
 
 end
