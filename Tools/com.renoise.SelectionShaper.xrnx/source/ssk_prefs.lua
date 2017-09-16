@@ -9,6 +9,7 @@ Preferences for the SSK tool
 ]]
 
 --=================================================================================================
+require (_xlibroot.."xKeyZone")
 
 class 'SSK_Prefs'(renoise.Document.DocumentNode)
 
@@ -35,6 +36,10 @@ function SSK_Prefs:__init()
   self:add_property("A4hz", renoise.Document.ObservableNumber(0))
   self:add_property("sig",renoise.Document.ObservableNumber(0))
 
+  -- selection
+  self:add_property("multiply_setend", renoise.Document.ObservableString(""))
+  self:add_property("flick_paste", renoise.Document.ObservableBoolean(false))
+
   -- multisample_note_min
   self:add_property("multisample_note_min",renoise.Document.ObservableNumber(0))
   self:add_property("multisample_note_max",renoise.Document.ObservableNumber(0))
@@ -42,10 +47,6 @@ function SSK_Prefs:__init()
   self:add_property("multisample_vel_min",renoise.Document.ObservableNumber(0))
   self:add_property("multisample_vel_max",renoise.Document.ObservableNumber(0))
   self:add_property("multisample_vel_steps",renoise.Document.ObservableNumber(0))
-
-  -- selection 
-  self:add_property("multiply_setend", renoise.Document.ObservableString(""))
-  self:add_property("flick_paste", renoise.Document.ObservableBoolean(false))
 
   -- generate 
   self:add_property("band_limited", renoise.Document.ObservableBoolean(false))
@@ -127,3 +128,32 @@ function SSK_Prefs:reset()
     ]]
 end
 
+---------------------------------------------------------------------------------------------------
+-- get properties that describe a keyzone layout 
+-- @return xKeyZoneLayout
+
+function SSK_Prefs:get_multisample_layout()
+  return xKeyZoneLayout{
+    note_steps = self.multisample_note_steps.value,
+    note_min = self.multisample_note_min.value,
+    note_max = self.multisample_note_max.value,
+    vel_steps = self.multisample_vel_steps.value,
+    vel_min = self.multisample_vel_min.value,
+    vel_max = self.multisample_vel_max.value,
+    --etc.
+  }
+end
+
+---------------------------------------------------------------------------------------------------
+-- apply properties that describe a keyzone layout 
+-- @return xKeyZoneLayout
+
+function SSK_Prefs:apply_multisample_layout(layout)
+  self.multisample_note_steps.value = layout.note_steps
+  self.multisample_note_min.value = layout.note_min
+  self.multisample_note_max.value = layout.note_max
+  self.multisample_vel_steps.value = layout.vel_steps
+  self.multisample_vel_min.value = layout.vel_min
+  self.multisample_vel_max.value = layout.vel_max
+  --etc.
+end
