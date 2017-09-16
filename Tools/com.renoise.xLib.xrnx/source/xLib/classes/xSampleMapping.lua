@@ -4,7 +4,7 @@ xSampleMapping
 
 --[[--
 
-Static methods for working with renoise sample mappings
+Static methods for working with sample mappings
 .
 #
 
@@ -13,17 +13,32 @@ Static methods for working with renoise sample mappings
 
 --]]
 --=================================================================================================
+require (_clibroot.."cDocument")
 
-class 'xSampleMapping'
+class 'xSampleMapping' (cDocument)
+
+-- exportable properties (cDocument)
+xSampleMapping.DOC_PROPS = {
+  layer = "boolean",
+  map_velocity_to_volume = "boolean",
+  map_key_to_pitch = "boolean",
+  base_note = "number",
+  note_range = "table<number>",
+  velocity_range = "table<number>",
+}
 
 ---------------------------------------------------------------------------------------------------
--- a 'virtual' sample-mapping object, 
+-- create a 'virtual' sample-mapping object 
+-- @param (vararg or renoise.SampleMapping)
 
 function xSampleMapping:__init(...)
 
   local args = cLib.unpack_args(...)
+  print("args",rprint(args))
 
-  --self.read_only
+  if (type(args[1])=="SampleMapping") then 
+    args = args[1]
+  end 
 
   -- renoise.Instrument.LAYER
   self.layer = args.layer 
@@ -37,6 +52,20 @@ function xSampleMapping:__init(...)
   self.note_range = args.note_range
   -- velocity_range, table with two numbers (0-127)
   self.velocity_range = args.velocity_range
+
+end
+
+---------------------------------------------------------------------------------------------------
+
+function xSampleMapping:__tostring()
+
+  return type(self)
+    .. ":layer=" .. tostring(self.layer)
+    .. ",map_velocity_to_volume=" .. tostring(self.map_velocity_to_volume)
+    .. ",map_key_to_pitch=" .. tostring(self.map_key_to_pitch)
+    .. ",base_note=" .. tostring(self.base_note)
+    .. ",note_range=" .. tostring(self.note_range)
+    .. ",velocity_range=" .. tostring(self.velocity_range)
 
 end
 
