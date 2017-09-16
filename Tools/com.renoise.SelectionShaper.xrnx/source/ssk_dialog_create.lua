@@ -66,7 +66,7 @@ function SSK_Dialog_Create:build()
     vb:row{
       vb:column{
         vb:text{
-          text = "Number of samples:",
+          text = "#Samples:",
         },
         vb:valuebox{
           id = "ssk_length_as_frames",
