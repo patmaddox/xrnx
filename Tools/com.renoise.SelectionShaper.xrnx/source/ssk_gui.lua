@@ -40,6 +40,8 @@ SSK_Gui.FORMULA_WIDTH = 120
 SSK_Gui.TOGGLE_SIZE = 16
 SSK_Gui.KEYZONE_HEIGHT = 120
 SSK_Gui.KEYZONE_LABEL_WIDTH = 52
+SSK_Gui.MINUS_PLUS_W = 34
+SSK_Gui.MULTISAMPLE_SWITCH_W = 107
 SSK_Gui.SMALL_LABEL_WIDTH = 44
 SSK_Gui.STRIP_HEIGHT = 36
 SSK_Gui.PANEL_INNER_MARGIN = 3
@@ -145,6 +147,8 @@ function SSK_Gui:__init(...)
 
   assert(type(args.owner) == "SSK")
 
+  self.dialog_title = "Selection Shaper Kai"
+
   -- Viewbuilder
   self.vb = renoise.ViewBuilder()
   -- SSK (SelectionShaper)
@@ -165,9 +169,9 @@ function SSK_Gui:__init(...)
   self.display_buffer_as_loop_observable = renoise.Document.ObservableBoolean(false)
 
   -- renoise.Dialog
-  self.dialog = nil  
+  --self.dialog = nil  
   -- renoise.view, dialog content 
-  self.vb_content = nil
+  --self.vb_content = nil
 
   -- SSK_Gui_Keyzone
   self.vkeyzone = nil
@@ -211,12 +215,12 @@ function SSK_Gui:__init(...)
     self.update_generate_panel_requested = true
     self.update_selection_header_requested = true
   end)
-  self.owner.sel_length_frames_observable:add_notifier(function()
-    TRACE(">>> SSK_Gui:sel_length_frames_observable fired...")
+  self.owner.selection.length_frames_observable:add_notifier(function()
+    TRACE(">>> SSK_Gui:selection.length_frames_observable fired...")
     self.update_selection_requested = true    
   end)
-  self.owner.sel_start_frames_observable:add_notifier(function()
-    TRACE(">>> SSK_Gui:sel_start_frames_observable fired...")
+  self.owner.selection.start_frames_observable:add_notifier(function()
+    TRACE(">>> SSK_Gui: start_frames_observable fired...")
     self.update_selection_requested = true    
   end)
   self.owner.sample_name_observable:add_notifier(function()
@@ -248,10 +252,10 @@ function SSK_Gui:__init(...)
     self.update_generate_panel_requested = true
     self.update_selection_header_requested = true
   end)  
-  self.owner.random_generated_observable:add_notifier(function()
+  self.owner.generator.random_generated_observable:add_notifier(function()
     self.update_generate_panel_requested = true
   end)
-  self.owner.recently_generated_observable:add_notifier(function()
+  self.owner.generator.recently_generated_observable:add_notifier(function()
     self.update_generate_panel_requested = true
   end)
   prefs.auto_generate:add_notifier(function()
@@ -284,12 +288,12 @@ function SSK_Gui:__init(...)
     self:update_panel_visibility()
   end)
   prefs.display_selection_as:add_notifier(function()
-    local as_os_fx = self.owner:display_selection_as_os_fx()
+    local as_os_fx = self.owner.selection:display_as_os_fx()
     if as_os_fx and prefs.sync_with_renoise.value then 
       -- prevent value from being interpreted (changed)
       -- when switching from frames to offsets
-      self.owner:obtain_sel_start_from_editor()
-      self.owner:obtain_sel_length_from_editor()
+      self.owner.selection:obtain_start_from_editor()
+      self.owner.selection:obtain_length_from_editor()
     end    
     self.update_selection_requested = true
     self.update_strip_requested = true
@@ -300,7 +304,8 @@ function SSK_Gui:__init(...)
 
   --== initialize ==--
 
-  vDialog.__init(...)
+
+  vDialog.__init(self,...)
 
   
 end 
@@ -318,50 +323,60 @@ function SSK_Gui:set_display_buffer_as_loop(val)
 end 
 
 ---------------------------------------------------------------------------------------------------
--- Class methods
+-- vDialog methods
 ---------------------------------------------------------------------------------------------------
--- Show the dialog (build if needed)
 
 function SSK_Gui:show()
-  TRACE("ScaleMate_UI:show()")
+  TRACE("SSK_Gui:show()")
 
-  if not self.dialog or not self.dialog.visible then 
-    if not self.vb_content then 
-      self:build()
-    end 
-    local _self_ = self
-    self.dialog = renoise.app():show_custom_dialog(
-      "Selection Shaper Kai",
-      self.vb_content,
-      function(dialog,key)
-        return self:key_handler(dialog,key)
-      end
-    )
-  end 
-
-  self.dialog:show()
+  vDialog.show(self)
   self:update_all()
 
 end
 
 ---------------------------------------------------------------------------------------------------
 
-function SSK_Gui:key_handler(dlg,key)
-  TRACE("SSK_Gui:key_handler(dlg,key)",dlg,key)
+function SSK_Gui:create_dialog()
+  TRACE("SSK_Gui:create_dialog()")
+
+  local vb = self.vb
+  return vb:column{
+    margin = SSK_Gui.DIALOG_MARGIN,
+    spacing = SSK_Gui.DIALOG_SPACING,
+    vb:column{
+      style = "border",
+      self:build_toolbar(),
+      self:build_keyzone(),
+    },    
+    self:build_buffer_panel(),
+    self:build_selection_panel(),    
+    self:build_generate_panel(),
+    self:build_modify_panel(),  
+  }
+
+end 
+
+---------------------------------------------------------------------------------------------------
+-- Class methods
+---------------------------------------------------------------------------------------------------
+
+function SSK_Gui:dialog_keyhandler(dlg,key)
+  TRACE("SSK_Gui:dialog_keyhandler(dlg,key)",dlg,key)
+  rprint(key)
   
   if (key.modifiers == "") then 
     -- pure keys (repeat allowed)
     if (key.name == "left") then 
-      self.owner:flick_back()
+      self.owner.selection:flick_back()
       return
     elseif (key.name == "right") then
-      self.owner:flick_forward()
+      self.owner.selection:flick_forward()
       return
     elseif (key.name == "up") then
-      self.owner:selection_multiply_length()
+      self.owner.selection:multiply_length()
       return
     elseif (key.name == "down") then
-      self.owner:selection_divide_length()
+      self.owner.selection:divide_length()
       return
     end 
     -- pure keys (no repeat)
@@ -385,12 +400,47 @@ function SSK_Gui:key_handler(dlg,key)
   if (key.modifiers == "control") 
     and (key.repeated == false)
   then 
-    -- keys with modifier (no repeat)
     if (key.name == "c") then 
       self.owner:buffer_memorize()
       return
     elseif (key.name == "v") then 
       self.owner:buffer_redraw()
+      return
+    end
+  end
+
+  if (key.modifiers == "shift") then 
+    -- keys with shift modifier (repeat allowed)
+    if (key.name == "left") then 
+      self.owner.selection:nudge_start(-1)
+      return
+    elseif (key.name == "right") then 
+      self.owner.selection:nudge_start(1)
+      return
+    end
+    if (key.name == "up") then 
+      self.owner.selection:nudge_length(1)
+      return
+    elseif (key.name == "down") then 
+      self.owner.selection:nudge_length(-1)
+      return
+    end
+  end
+
+  if (key.modifiers == "shift + control") then 
+    -- keys with shift modifier (repeat allowed)
+    if (key.name == "left") then 
+      self.owner.selection:nudge_start(-10)
+      return
+    elseif (key.name == "right") then 
+      self.owner.selection:nudge_start(10)
+      return
+    end
+    if (key.name == "up") then 
+      self.owner.selection:nudge_length(10)
+      return
+    elseif (key.name == "down") then 
+      self.owner.selection:nudge_length(-10)
       return
     end
   end
@@ -404,6 +454,10 @@ end
 
 function SSK_Gui:update_all()
   TRACE("SSK_Gui:update_all()")
+
+  if not self.dialog_content then 
+    return
+  end
 
   self:update_panel_visibility()
   self:update_duty_cycle()
@@ -422,10 +476,11 @@ end
 
 function SSK_Gui:update_panel_visibility()
   TRACE("SSK_Gui:update_panel_visibility()")
-  self.vb.views.ssk_selection_panel.visible = prefs.display_selection_panel.value
-  self.vb.views.ssk_generate_panel.visible = prefs.display_generate_panel.value
-  self.vb.views.ssk_modify_panel.visible = prefs.display_modify_panel.value
-  self.vb.views.ssk_multisample_editor.visible = prefs.multisample_mode.value
+  local vb = self.vb
+  vb.views.ssk_selection_panel.visible = prefs.display_selection_panel.value
+  vb.views.ssk_generate_panel.visible = prefs.display_generate_panel.value
+  vb.views.ssk_modify_panel.visible = prefs.display_modify_panel.value
+  vb.views.ssk_multisample_editor.visible = prefs.multisample_mode.value
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -435,21 +490,24 @@ function SSK_Gui:update_select_panel()
 
   local is_active = self.owner:get_sample_buffer() and true or false
   local sync_enabled = prefs.sync_with_renoise.value
+  local vb = self.vb
   
   -- header 
-  self.vb.views.ssk_sync_with_renoise.active = is_active
-  self.vb.views.ssk_selection_unit_popup.active = is_active
+  vb.views.ssk_sync_with_renoise.active = is_active
+  vb.views.ssk_selection_unit_popup.active = is_active
   -- start 
-  self.vb.views.ssk_get_selection_start.active = is_active and not sync_enabled
-  self.vb.views.ssk_selection_start.active = is_active
-  self.vb.views.ssk_selection_apply_start.active = is_active
+  vb.views.ssk_get_selection_start.active = is_active and not sync_enabled
+  vb.views.ssk_selection_start.active = is_active
+  vb.views.ssk_sel_start_spinner.active = is_active
+  vb.views.ssk_selection_apply_start.active = is_active
   -- length 
-  self.vb.views.ssk_get_selection_length.active = is_active and not sync_enabled
-  self.vb.views.ssk_selection_length.active = is_active
-  self.vb.views.ssk_selection_apply_length.active = is_active
-  self.vb.views.ssk_selection_multiply_length.active = is_active
-  self.vb.views.ssk_selection_divide_length.active = is_active
-  self.vb.views.multiply_setend.active = is_active
+  vb.views.ssk_get_selection_length.active = is_active and not sync_enabled
+  vb.views.ssk_selection_length.active = is_active
+  vb.views.ssk_sel_length_spinner.active = is_active
+  vb.views.ssk_selection_apply_length.active = is_active
+  vb.views.ssk_selection_multiply_length.active = is_active
+  vb.views.ssk_selection_divide_length.active = is_active
+  vb.views.multiply_setend.active = is_active
 
 end
 
@@ -458,30 +516,33 @@ end
 function SSK_Gui:update_generate_panel()
   TRACE("SSK_Gui:update_generate_panel()")
 
-  local is_active = self.owner:get_sample_buffer() and true or false
-  local can_repeat_rnd = self.owner.random_wave_fn and true or false
-  self.vb.views.ssk_generate_random_bt.active = is_active
-  self.vb.views.ssk_generate_repeat_random_bt.active = is_active and can_repeat_rnd
-  self.vb.views.ssk_generate_white_noise_bt.active = is_active
-  self.vb.views.ssk_generate_brown_noise_bt.active = is_active
-  self.vb.views.ssk_generate_violet_noise_bt.active = is_active
-  self.vb.views.ssk_generate_sin_wave_bt.active = is_active
-  self.vb.views.ssk_generate_saw_wave_bt.active = is_active
-  self.vb.views.ssk_generate_square_wave_bt.active = is_active
-  self.vb.views.ssk_generate_triangle_wave_bt.active = is_active
+  local can_generate_multisample = self.owner.generator:can_generate_multisample()
+  local can_generate = self.owner:get_sample_buffer() and true or can_generate_multisample
+  local can_repeat_rnd = self.owner.random_wave_fn 
+  local vb = self.vb
+
+  vb.views.ssk_generate_random_bt.active = can_generate
+  vb.views.ssk_generate_repeat_random_bt.active = (can_generate and can_repeat_rnd) and true or false
+  vb.views.ssk_generate_white_noise_bt.active = can_generate
+  vb.views.ssk_generate_brown_noise_bt.active = can_generate
+  vb.views.ssk_generate_violet_noise_bt.active = can_generate
+  vb.views.ssk_generate_sin_wave_bt.active = can_generate
+  vb.views.ssk_generate_saw_wave_bt.active = can_generate
+  vb.views.ssk_generate_square_wave_bt.active = can_generate
+  vb.views.ssk_generate_triangle_wave_bt.active = can_generate
 
   -- highlight recently generated 
-  local recent_sin = (self.owner.recently_generated == cWaveform.FORM.SIN)
-  local recent_saw = (self.owner.recently_generated == cWaveform.FORM.SAW)
-  local recent_square = (self.owner.recently_generated == cWaveform.FORM.SQUARE)
-  local recent_triangle = (self.owner.recently_generated == cWaveform.FORM.TRIANGLE)
-  self.vb.views.ssk_generate_sin_wave_bt.color = 
+  local recent_sin = (self.owner.generator.recently_generated == cWaveform.FORM.SIN)
+  local recent_saw = (self.owner.generator.recently_generated == cWaveform.FORM.SAW)
+  local recent_square = (self.owner.generator.recently_generated == cWaveform.FORM.SQUARE)
+  local recent_triangle = (self.owner.generator.recently_generated == cWaveform.FORM.TRIANGLE)
+  vb.views.ssk_generate_sin_wave_bt.color = 
     prefs.auto_generate.value and recent_sin and SSK_Gui.COLOR_SELECTED or SSK_Gui.COLOR_NONE
-  self.vb.views.ssk_generate_saw_wave_bt.color = 
+  vb.views.ssk_generate_saw_wave_bt.color = 
     prefs.auto_generate.value and recent_saw and SSK_Gui.COLOR_SELECTED or SSK_Gui.COLOR_NONE
-  self.vb.views.ssk_generate_square_wave_bt.color = 
+  vb.views.ssk_generate_square_wave_bt.color = 
     prefs.auto_generate.value and recent_square and SSK_Gui.COLOR_SELECTED or SSK_Gui.COLOR_NONE
-  self.vb.views.ssk_generate_triangle_wave_bt.color = 
+  vb.views.ssk_generate_triangle_wave_bt.color = 
     prefs.auto_generate.value and recent_triangle and SSK_Gui.COLOR_SELECTED or SSK_Gui.COLOR_NONE
 
 end
@@ -492,23 +553,25 @@ function SSK_Gui:update_modify_panel()
   TRACE("SSK_Gui:update_modify_panel()")
 
   local is_active = self.owner:get_sample_buffer() and true or false
-  self.vb.views.ssk_generate_shift_plus_bt.active = is_active
-  self.vb.views.ssk_generate_shift_minus_bt.active = is_active
-  self.vb.views.ssk_generate_shift_plus_fine_bt.active = is_active
-  self.vb.views.ssk_generate_shift_minus_fine_bt.active = is_active
-  self.vb.views.ssk_generate_fade_center_a_bt.active = is_active
-  self.vb.views.ssk_generate_fade_center_b_bt.active = is_active
-  self.vb.views.ssk_generate_fade_out_bt.active = is_active
-  self.vb.views.ssk_generate_fade_in_bt.active = is_active
-  self.vb.views.ssk_generate_multiply_lower_bt.active = is_active
-  self.vb.views.ssk_generate_multiply_raise_bt.active = is_active
-  --self.vb.views.ssk_resize_expand_bt.active = is_active
-  --self.vb.views.ssk_resize_shrink_bt.active = is_active
-  self.vb.views.ssk_generate_rm_sin_bt.active = is_active
-  self.vb.views.ssk_generate_rm_saw_bt.active = is_active
-  self.vb.views.ssk_generate_rm_square_bt.active = is_active
-  self.vb.views.ssk_generate_rm_triangle_bt.active = is_active
-  self.vb.views.ssk_generate_pd_copy_bt.active = is_active
+  local vb = self.vb
+  
+  vb.views.ssk_generate_shift_plus_bt.active = is_active
+  vb.views.ssk_generate_shift_minus_bt.active = is_active
+  vb.views.ssk_generate_shift_plus_fine_bt.active = is_active
+  vb.views.ssk_generate_shift_minus_fine_bt.active = is_active
+  vb.views.ssk_generate_fade_center_a_bt.active = is_active
+  vb.views.ssk_generate_fade_center_b_bt.active = is_active
+  vb.views.ssk_generate_fade_out_bt.active = is_active
+  vb.views.ssk_generate_fade_in_bt.active = is_active
+  vb.views.ssk_generate_multiply_lower_bt.active = is_active
+  vb.views.ssk_generate_multiply_raise_bt.active = is_active
+  --vb.views.ssk_resize_expand_bt.active = is_active
+  --vb.views.ssk_resize_shrink_bt.active = is_active
+  vb.views.ssk_generate_rm_sin_bt.active = is_active
+  vb.views.ssk_generate_rm_saw_bt.active = is_active
+  vb.views.ssk_generate_rm_square_bt.active = is_active
+  vb.views.ssk_generate_rm_triangle_bt.active = is_active
+  vb.views.ssk_generate_pd_copy_bt.active = false --is_active
 
 end
 
@@ -517,9 +580,11 @@ end
 function SSK_Gui:update_duty_cycle()
   TRACE("SSK_Gui:update_duty_cycle()")
   local is_active = prefs.mod_duty_onoff.value 
-  self.vb.views.duty_fiducial.active = is_active
-  self.vb.views.duty_variation.active = is_active
-  self.vb.views.duty_var_frq.active = is_active
+  local vb = self.vb
+  
+  vb.views.duty_fiducial.active = is_active
+  vb.views.duty_variation.active = is_active
+  vb.views.duty_var_frq.active = is_active
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -528,9 +593,11 @@ function SSK_Gui:update_pd_duty_cycle()
   TRACE("SSK_Gui:update_pd_duty_cycle()")
 
   local is_active = prefs.mod_pd_duty_onoff.value 
-  self.vb.views.pd_duty_fiducial.active = is_active
-  self.vb.views.pd_duty_variation.active = is_active
-  self.vb.views.pd_duty_var_frq.active = is_active
+  local vb = self.vb
+  
+  vb.views.pd_duty_fiducial.active = is_active
+  vb.views.pd_duty_variation.active = is_active
+  vb.views.pd_duty_var_frq.active = is_active
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -539,40 +606,61 @@ function SSK_Gui:update_toolbar()
   TRACE("SSK_Gui:update_toolbar()")
 
   local has_samples = false
-  local vb_textfield = self.vb.views.ssk_status_sample_name
-  if self.owner.instrument then 
-    local instr_name = (self.owner.instrument.name == "") 
-      and "Untitled instrument" or self.owner.instrument.name
-    has_samples = #self.owner.instrument.samples > 0
-    if self.owner.sample then 
-      local sample_name = xSample.get_display_name(self.owner.sample,self.owner.sample_index)
+  local instr = self.owner.instrument
+  local vb = self.vb
+
+  local get_sample_info = function(instr_name,sample_idx)
+    local txt = ""
+    local sample = instr.samples[sample_idx]
+    print("sample",sample,sample_idx)
+    if sample then 
+      local sample_name = xSample.get_display_name(sample,sample_idx)
       local buffer = self.owner:get_sample_buffer()
       if not buffer then 
         sample_name = ("%s (empty)"):format(sample_name)
       end 
-      vb_textfield.text = ("%s - %s"):format(instr_name,sample_name)
+      txt = ("%s - %s"):format(instr_name,sample_name)
     elseif not has_samples then 
-      vb_textfield.text = ("%s - No samples present"):format(instr_name)
+      txt = ("%s (no samples)"):format(instr_name)
     else 
-      vb_textfield.text = ("%s - No sample selected"):format(instr_name)
+      error("Unexpected condition")
     end 
-  else 
-    vb_textfield.text = "Instrument N/A"
-  end 
+    return txt
+  end
+
+  local vb_selector = vb.views.ssk_sample_selector
+  local infos = {}
+  if instr then
+    local instr_name = (instr.name == "") 
+      and "Untitled instrument" or instr.name
+    local has_samples = #instr.samples > 0
+    if has_samples then
+      infos = {("%s - no sample selected"):format(instr_name)}
+      for k,v in ipairs(instr.samples) do
+        table.insert(infos,get_sample_info(instr_name,k))
+      end 
+    else
+      infos = {("%s - (no samples)"):format(instr_name)}
+    end
+  else
+    infos = {("Instrument N/A")}
+  end
+  local sample_idx = rns.selected_sample_index--self.owner.sample_index
+  vb_selector.items = table.is_empty(infos) and {} or infos
+  vb_selector.value = infos[sample_idx] and sample_idx+1 or 1
 
   -- force width of instr/sample readout (crop text)
-  local insert_delete_w = 34
-  local multisample_switch_w = 100
-  vb_textfield.width = SSK_Gui.DIALOG_INNER_WIDTH - (insert_delete_w+multisample_switch_w)
+  vb_selector.width = SSK_Gui.DIALOG_INNER_WIDTH - 
+    (SSK_Gui.MINUS_PLUS_W + SSK_Gui.MULTISAMPLE_SWITCH_W)
 
-  self.vb.views.ssk_sample_delete.active = (self.owner.sample and has_samples) and true or false
+  vb.views.ssk_sample_delete.active = (self.owner.sample and has_samples) and true or false
 
-  local vb_multisample = self.vb.views.ssk_status_multisample
+  local vb_multisample = vb.views.ssk_status_multisample
   local multi_on = prefs.multisample_mode.value 
 
   vb_multisample.text = multi_on and "Multisample ON" or "Multisample OFF"
   vb_multisample.font = multi_on and "bold" or "normal"
-  vb_multisample.width = multisample_switch_w
+  vb_multisample.width = SSK_Gui.MULTISAMPLE_SWITCH_W
 
 end 
 
@@ -584,14 +672,16 @@ function SSK_Gui:update_buffer_controls()
 
   local buffer = self.owner:get_sample_buffer() and true or false
   local memorized = self.owner.clip_wv_fn and true or false
-  self.vb.views.ssk_buffer_delete.active = buffer
-  self.vb.views.ssk_buffer_insert.active = buffer
-  self.vb.views.ssk_buffer_trim.active = buffer
-  self.vb.views.ssk_buffer_copy.active = buffer
-  self.vb.views.ssk_buffer_copy_to_new.active = buffer
-  self.vb.views.ssk_buffer_paste.active = buffer and memorized
-  self.vb.views.ssk_buffer_mix_paste.active = buffer and memorized
-  self.vb.views.ssk_buffer_swap.active = buffer and memorized
+  local vb = self.vb
+  
+  vb.views.ssk_buffer_delete.active = buffer
+  vb.views.ssk_buffer_insert.active = buffer
+  vb.views.ssk_buffer_trim.active = buffer
+  vb.views.ssk_buffer_copy.active = buffer
+  vb.views.ssk_buffer_copy_to_new.active = buffer
+  vb.views.ssk_buffer_paste.active = buffer and memorized
+  vb.views.ssk_buffer_mix_paste.active = buffer and memorized
+  vb.views.ssk_buffer_swap.active = buffer and memorized
 
 end
 
@@ -603,10 +693,12 @@ function SSK_Gui:update_selection_strip_controls()
 
   local buffer = self.owner:get_sample_buffer() 
   local is_active = buffer and true or false
-  self.vb.views.ssk_flick_forward.active = is_active
-  self.vb.views.ssk_flick_back.active = is_active
+  local vb = self.vb
+  
+  vb.views.ssk_flick_forward.active = is_active
+  vb.views.ssk_flick_back.active = is_active
 
-  local loop_bt = self.vb.views.ssk_strip_set_loop
+  local loop_bt = vb.views.ssk_strip_set_loop
   loop_bt.active = is_active
   loop_bt.text = self.display_buffer_as_loop and "Clr.Loop" or "Set Loop"
   loop_bt.tooltip = self.display_buffer_as_loop and
@@ -615,8 +707,8 @@ function SSK_Gui:update_selection_strip_controls()
 
   --== update channel toggle-buttons ==--
 
-  local toggle_right_bt = self.vb.views.ssk_selection_toggle_right
-  local toggle_left_bt = self.vb.views.ssk_selection_toggle_left
+  local toggle_right_bt = vb.views.ssk_selection_toggle_right
+  local toggle_left_bt = vb.views.ssk_selection_toggle_left
 
   if (not buffer or buffer.number_of_channels == 1) then 
     -- mono
@@ -656,7 +748,8 @@ end
 function SSK_Gui:update_selection_strip()
   TRACE("SSK_Gui:update_selection_strip()")
 
-  local vb_strip = self.vb.views.ssk_selection_strip
+  local vb = self.vb
+  local vb_strip = vb.views.ssk_selection_strip
   local total_w = SSK_Gui.DIALOG_WIDTH - 
     (SSK_Gui.SMALL_BT_X2_WIDTH + 24)
 
@@ -674,7 +767,6 @@ function SSK_Gui:update_selection_strip()
 
   -- abort if too small a selection 
   local sel_ratio = range/buffer.number_of_frames
-  print("sel_ratio",sel_ratio)
   if (sel_ratio < SSK_Gui.MIN_SELECTION_RATIO) then 
     self.selection_strip.items = {}
     self.selection_strip.placeholder_message = "Selection is too small to display"
@@ -692,14 +784,14 @@ function SSK_Gui:update_selection_strip()
 
   -- different handling for OS Effects 
   -- (avoid rounding artifacts)
-  local as_os_fx = self.owner:display_selection_as_os_fx()
+  local as_os_fx = self.owner.selection:display_as_os_fx()
 
   -- check for perfect lead/trail (used with 0S Effect)
   local is_perfect_lead,is_perfect_trail = false,false
   if as_os_fx then 
-    is_perfect_lead = self.owner:is_perfect_lead() 
-    is_perfect_trail = self.owner:is_perfect_trail()
-    print("is_perfect_lead,is_perfect_trail",is_perfect_lead,is_perfect_trail)
+    is_perfect_lead = self.owner.selection:is_perfect_lead() 
+    is_perfect_trail = self.owner.selection:is_perfect_trail()
+    --print("is_perfect_lead,is_perfect_trail",is_perfect_lead,is_perfect_trail)
   end
 
   if (range == buffer.number_of_frames) and not is_fully_looped then 
@@ -719,7 +811,7 @@ function SSK_Gui:update_selection_strip()
     segment_length = range
 
     local num_lead_segments = function()
-      return self.owner.sel_start_offset/self.owner.sel_length_offset
+      return self.owner.selection.start_offset/self.owner.selection.length_offset
     end
     
     if as_os_fx and is_perfect_lead then
@@ -742,8 +834,8 @@ function SSK_Gui:update_selection_strip()
     end
 
     local num_trail_segments = function()
-      local start = self.owner.sel_start_offset
-      local length = self.owner.sel_length_offset
+      local start = self.owner.selection.start_offset
+      local length = self.owner.selection.length_offset
       return (256-(start+length))/length
     end
 
@@ -770,7 +862,7 @@ function SSK_Gui:update_selection_strip()
     end 
   end
 
-  print("num_segments",num_segments)
+  --print("num_segments",num_segments)
   -- we have our segments - now create the weights
   -- check if active/looped segment 
   local weights = {}  -- table<vButtonStripMember> 
@@ -790,7 +882,7 @@ function SSK_Gui:update_selection_strip()
         -- (avoid rounding artifacts)
         seg_start,seg_end = self.owner:get_nth_segment_by_offset(k-1,num_segments)        
         segment_length = seg_end-seg_start
-        print("segment_length",segment_length,seg_end,seg_start)
+        --print("segment_length",segment_length,seg_end,seg_start)
       end
     end
 
@@ -863,7 +955,7 @@ function SSK_Gui:update_selection_strip()
     tmp_frame = tmp_frame + v.weight
 
   end 
-  print("weights...",rprint(weights))
+  --print("weights...",rprint(weights))
   self.selection_strip.items = weights
   self.selection_strip:update()
 
@@ -874,122 +966,23 @@ end
 
 function SSK_Gui:update_selection_length()
   TRACE("SSK_Gui:update_selection_length()")
-  if self.owner:display_selection_as_samples() then 
-    self.vb.views.ssk_selection_start.value = tostring(self.owner.sel_start_frames) 
-    self.vb.views.ssk_selection_length.value = tostring(self.owner.sel_length_frames) 
-  elseif self.owner:display_selection_as_beats() then
-    self.vb.views.ssk_selection_start.value = tostring(self.owner.sel_start_beats) 
-    self.vb.views.ssk_selection_length.value = tostring(self.owner.sel_length_beats) 
-  elseif self.owner:display_selection_as_os_fx() then
-    self.vb.views.ssk_selection_start.value = ("0x%X"):format(self.owner.sel_start_offset) 
-    self.vb.views.ssk_selection_length.value = ("0x%X"):format(self.owner.sel_length_offset) 
+
+  local vb = self.vb
+  
+  if self.owner.selection:display_as_samples() then 
+    vb.views.ssk_selection_start.value = tostring(self.owner.selection.start_frames) 
+    vb.views.ssk_selection_length.value = tostring(self.owner.selection.length_frames) 
+  elseif self.owner.selection:display_as_beats() then
+    vb.views.ssk_selection_start.value = tostring(self.owner.selection.start_beats) 
+    vb.views.ssk_selection_length.value = tostring(self.owner.selection.length_beats) 
+  elseif self.owner.selection:display_as_os_fx() then
+    vb.views.ssk_selection_start.value = ("0x%X"):format(self.owner.selection.start_offset) 
+    vb.views.ssk_selection_length.value = ("0x%X"):format(self.owner.selection.length_offset) 
   else 
-    self.vb.views.ssk_selection_start.value = ""
-    self.vb.views.ssk_selection_length.value = ""
+    vb.views.ssk_selection_start.value = ""
+    vb.views.ssk_selection_length.value = ""
   end
 end 
-
----------------------------------------------------------------------------------------------------
--- update the selection start inputs via infinite spinner 
-
-function SSK_Gui:set_selection_start_via_spinner(val)
-  print("SSK_Gui:set_selection_start_via_spinner(val)",val)
-
-  local sync_enabled = prefs.sync_with_renoise.value
-  local buffer = self.owner.sample.sample_buffer
-
-  if (self.owner:display_selection_as_samples() 
-    or self.owner:display_selection_as_beats())
-  then 
-    local min = 1
-    local max = buffer.number_of_frames
-    local sel_start = cLib.clamp_value(self.owner.sel_start_frames + val,min,max)
-    self.owner.sel_start_frames = sel_start
-    if buffer and sync_enabled then
-      self.owner:apply_selection_range(self.owner.sel_length_frames,sel_start)
-    end
-  elseif self.owner:display_selection_as_os_fx() then
-    -- use 16 as right-click increment/decrement
-    val = (val == -10) and -0x10 or (val == 10) and 0x10 or val
-    local start_offset = self.owner.sel_start_offset
-    local num_frames = buffer.number_of_frames
-    if (num_frames < 0x100) then 
-      -- for small buffers, look up nearest start 
-      if (val > 0) then
-        start_offset = xSampleBuffer.get_next_offset(num_frames,start_offset+val-1)
-      else
-        start_offset = xSampleBuffer.get_previous_offset(num_frames,start_offset+val+1)
-      end
-    else
-      start_offset = self.owner.sel_start_offset + val
-    end 
-    if start_offset then
-      self.owner.sel_start_offset = cLib.clamp_value(start_offset,0,256)    
-      print("self.owner.sel_start_offset POST",self.owner.sel_start_offset)
-      if buffer and sync_enabled then
-        local sel_start = xSampleBuffer.get_frame_by_offset(buffer,self.owner.sel_start_offset)
-        self.owner:apply_selection_range(self.owner.sel_length_frames,sel_start)
-      end
-    end
-  end
-
-end
-
----------------------------------------------------------------------------------------------------
--- update the selection length inputs via infinite spinner 
-
-function SSK_Gui:set_selection_length_via_spinner(val)
-  print("SSK_Gui:set_selection_length_via_spinner(val)",val)
-
-  local sync_enabled = prefs.sync_with_renoise.value
-  local buffer = self.owner.sample.sample_buffer
-
-  if (self.owner:display_selection_as_samples() 
-    or self.owner:display_selection_as_beats())
-  then 
-    local min = 1
-    local max = buffer.number_of_frames
-    self.owner.sel_length_frames = cLib.clamp_value(self.owner.sel_length_frames + val,min,max)
-    if buffer and sync_enabled then
-      local sel_length = self.owner.sel_length_frames
-      self.owner:apply_selection_range(sel_length)
-    end
-  elseif self.owner:display_selection_as_os_fx() then
-    -- use 16 as right-click increment/decrement
-    val = (val == -10) and -0x10 or (val == 10) and 0x10 or val
-    local length_offset = 0 
-    local num_frames = buffer.number_of_frames
-    if (num_frames < 0x100) then 
-      -- for small buffers, look up nearest length 
-      -- search from current end point
-      local end_offset = self.owner.sel_start_offset+self.owner.sel_length_offset
-      if (val > 0) then
-        end_offset = xSampleBuffer.get_next_offset(num_frames,end_offset+val-1)
-      else
-        end_offset = xSampleBuffer.get_previous_offset(num_frames,end_offset+val+1)
-      end
-      print("set_selection_length_via_spinner - end_offset",end_offset)
-      if end_offset then 
-        length_offset = end_offset - self.owner.sel_start_offset
-      end
-    else
-      length_offset = self.owner.sel_length_offset + val
-    end 
-    if length_offset then
-      self.owner.sel_length_offset = cLib.clamp_value(length_offset,0,256)    
-      print("self.owner.sel_length_offset POST",self.owner.sel_length_offset)
-      if buffer and sync_enabled then
-        local end_offset = self.owner.sel_start_offset+self.owner.sel_length_offset
-        print("end_offset",end_offset)
-        local sel_start = xSampleBuffer.get_frame_by_offset(buffer,self.owner.sel_start_offset)
-        local sel_end = xSampleBuffer.get_frame_by_offset(buffer,end_offset)
-        local sel_length = sel_end-sel_start
-        self.owner:apply_selection_range(sel_length)
-      end
-    end
-  end
-
-end
 
 ---------------------------------------------------------------------------------------------------
 -- update the selected range readout 
@@ -998,21 +991,23 @@ function SSK_Gui:update_selection_header()
   TRACE("SSK_Gui:update_selection_header()")
 
   local sel_start,sel_end,sel_length
-  local vb_textfield = self.vb.views.ssk_selection_header_txt
+  local vb = self.vb
+  
+  local vb_textfield = vb.views.ssk_selection_header_txt
   if self.owner:get_sample_buffer() then 
     local buffer = self.owner.sample.sample_buffer
     sel_start = buffer.selection_start - 1
     sel_end = buffer.selection_end
     sel_length = sel_end - sel_start
-    local sel_hz = self.owner:get_hz_from_selection()
-    if self.owner:display_selection_as_os_fx() then 
+    local sel_hz = self.owner.selection:get_hz_from_range()
+    if self.owner.selection:display_as_os_fx() then 
       sel_start = xSampleBuffer.get_offset_by_frame(buffer,buffer.selection_start)
-      sel_end = self.owner:obtain_sel_end_offset(buffer)
+      sel_end = self.owner.selection:obtain_end_offset(buffer)
       sel_length = sel_end - sel_start
       vb_textfield.text = (" [%X - %X] (%X) - %.2fHz"):format(sel_start,sel_end,sel_length,sel_hz)
-    elseif self.owner:display_selection_as_samples() then 
+    elseif self.owner.selection:display_as_samples() then 
       vb_textfield.text = (" [%d - %d] (%d) - %.2fHz"):format(sel_start,sel_end,sel_length,sel_hz)
-    elseif self.owner:display_selection_as_beats() then
+    elseif self.owner.selection:display_as_beats() then
       sel_start = 1 + xSampleBuffer.get_beat_by_frame(buffer,sel_start)
       sel_end = 1 + xSampleBuffer.get_beat_by_frame(buffer,sel_end)
       sel_length = 1 + sel_end - sel_start
@@ -1033,35 +1028,17 @@ end
 
 ---------------------------------------------------------------------------------------------------
 
-function SSK_Gui:build()
-
-  self.vb_content = self.vb:column{
-    margin = SSK_Gui.DIALOG_MARGIN,
-    spacing = SSK_Gui.DIALOG_SPACING,
-    self.vb:column{
-      style = "border",
-      self:build_toolbar(),
-      self:build_keyzone(),
-    },    
-    self:build_buffer_panel(),
-    self:build_selection_panel(),    
-    self:build_generate_panel(),
-    self:build_modify_panel(),  
-  }
-
-end 
-
----------------------------------------------------------------------------------------------------
-
 function SSK_Gui:build_toolbar()
 
-  return self.vb:horizontal_aligner{
+  local vb = self.vb
+
+  return vb:horizontal_aligner{
     id = "ssk_header_aligner",
     mode = "justify",
     margin = SSK_Gui.DIALOG_MARGIN,
-    self.vb:row{
+    vb:row{
       spacing = SSK_Gui.NULL_SPACING,
-      self.vb:button{
+      vb:button{
         id = "ssk_sample_delete",    
         text = "‒",
         tooltip = "Delete the selected sample.",
@@ -1069,7 +1046,7 @@ function SSK_Gui:build_toolbar()
           self.owner:delete_sample()
         end,          
       },
-      self.vb:button{ 
+      vb:button{ 
         id = "ssk_sample_insert",    
         text = "+",
         tooltip = "Create/insert a new sample",
@@ -1077,22 +1054,39 @@ function SSK_Gui:build_toolbar()
           self.owner:insert_sample()
         end,
       },       
-      self.vb:space{
+      vb:space{
         width = 6,
-      },
-      self.vb:text{
-        id = "ssk_status_sample_name",
-        text = "",
-        font = "normal",
-      },
+      },      
+      -- vb:text{
+      --   id = "ssk_status_sample_name",
+      --   text = "",
+      --   font = "normal",
+      -- },
+      vb:popup{
+        id = "ssk_sample_selector",
+        notifier = function(idx)
+          local instr = self.owner.instrument
+          if instr then 
+            local sample_idx = idx-1
+            local sample = instr.samples[sample_idx]
+            if sample then 
+              rns.selected_sample_index = sample_idx
+            else 
+              -- selected 'none', restore current sample 
+              vb.views.ssk_sample_selector.value = rns.selected_sample_index+1
+            end 
+          end
+          
+        end
+      }
     },
-    self.vb:text{
+    vb:text{
       id = "ssk_status_multisample",
       text = "",
       font = "normal",
       align = "center"
     },
-    self.vb:checkbox{
+    vb:checkbox{
       visible = false,
       bind = prefs.multisample_mode,
     },
@@ -1107,7 +1101,7 @@ function SSK_Gui:build_keyzone()
   local vb = self.vb 
 
   self.vkeyzone = SSK_Gui_Keyzone{
-    vb = self.vb,
+    vb = vb,
     width = SSK_Gui.KEYZONE_WIDTH,
     height = SSK_Gui.KEYZONE_HEIGHT,
     note_steps = prefs.multisample_note_steps.value,
@@ -1251,9 +1245,8 @@ function SSK_Gui:select_by_segment(idx,strip)
   if not buffer or not sample then 
     return
   end 
-  --local as_os_fx = self.owner:display_selection_as_os_fx()
-  local is_perfect_lead = self.owner:is_perfect_lead()
-  local is_perfect_trail = self.owner:is_perfect_trail()
+  local is_perfect_lead = self.owner.selection:is_perfect_lead()
+  local is_perfect_trail = self.owner.selection:is_perfect_trail()
 
   if is_perfect_lead and is_perfect_trail and not self.display_buffer_as_loop then 
     -- select by offset index 
@@ -1271,8 +1264,10 @@ end
 
 function SSK_Gui:build_buffer_panel()
 
+  local vb = self.vb
+
   self.selection_strip = vButtonStrip{
-    vb = self.vb,
+    vb = vb,
     height = SSK_Gui.STRIP_HEIGHT,
     width = SSK_Gui.DIALOG_INNER_WIDTH - 75,
     spacing = vLib.NULL_SPACING,    
@@ -1283,53 +1278,53 @@ function SSK_Gui:build_buffer_panel()
     end,
   }
 
-  return self.vb:column{
-    self.vb:row{
-      self.vb:row{
+  return vb:column{
+    vb:row{
+      vb:row{
         id = "ssk_selection_strip",
         spacing = SSK_Gui.NULL_SPACING-1,
         self.selection_strip.view,
       },       
-      self.vb:row{
-        self.vb:column{          
-          self.vb:button{
+      vb:row{
+        vb:column{          
+          vb:button{
             id = "ssk_selection_toggle_left",
             text = "L",
             notifier = function()
-              self.owner:selection_toggle_left()
+              self.owner.selection:toggle_left()
             end,
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_selection_toggle_right",
             text = "R",
             notifier = function()
-              self.owner:selection_toggle_right()
+              self.owner.selection:toggle_right()
             end,
           },
         },
-        self.vb:column{
-          self.vb:row{
+        vb:column{
+          vb:row{
             spacing = SSK_Gui.NULL_SPACING,
-            self.vb:button{
+            vb:button{
               id = "ssk_flick_back",
               text = "←",
               width = SSK_Gui.SMALL_BT_WIDTH,    
               tooltip = "Flick the selection range leftward.",      
               notifier = function()
-                self.owner:flick_back()
+                self.owner.selection:flick_back()
               end,          
             },
-            self.vb:button{
+            vb:button{
               id = "ssk_flick_forward",
               text = "→",
               width = SSK_Gui.SMALL_BT_WIDTH,
               tooltip = "Flick the selection range rightward.",
               notifier = function()
-                self.owner:flick_forward()
+                self.owner.selection:flick_forward()
               end,          
             },
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_strip_set_loop",
             width = SSK_Gui.SMALL_BT_X2_WIDTH,
             notifier = function()
@@ -1344,14 +1339,14 @@ function SSK_Gui:build_buffer_panel()
         }
       },        
     },    
-    self.vb:row{
+    vb:row{
       --id = "ssk_buffer_panel",
-      self.vb:text{
+      vb:text{
         text = "Buffer"
       },
-      self.vb:row{
+      vb:row{
         spacing = SSK_Gui.NULL_SPACING,
-        self.vb:button{
+        vb:button{
           id = "ssk_buffer_delete",    
           text = "‒",
           tooltip = "Clear the selection range without changing the sample length",
@@ -1359,7 +1354,7 @@ function SSK_Gui:build_buffer_panel()
             self.owner:sync_del()
           end,          
         },
-        self.vb:button{ 
+        vb:button{ 
           id = "ssk_buffer_insert",    
           text = "+",
           tooltip = "Insert silence without changing the sample length",
@@ -1368,10 +1363,10 @@ function SSK_Gui:build_buffer_panel()
           end,
         },        
       },
-      self.vb:space{
+      vb:space{
         width = SSK_Gui.ITEM_SPACING,
       },   
-      self.vb:button{
+      vb:button{
         id = "ssk_buffer_trim",
         text = "Trim",
         tooltip = "Trim sample to the selected range.",
@@ -1379,7 +1374,7 @@ function SSK_Gui:build_buffer_panel()
           self.owner:trim()
         end
       }, 
-      self.vb:button{
+      vb:button{
         id = "ssk_buffer_copy",
         text = "Copy",
         tooltip = "Memorize the waveform in a selection range.",
@@ -1387,7 +1382,7 @@ function SSK_Gui:build_buffer_panel()
           self.owner:buffer_memorize()
         end
       }, 
-      self.vb:button{
+      vb:button{
         id = "ssk_buffer_copy_to_new",
         text = "Copy to new",
         tooltip = "Copy the selection range into new sample.",
@@ -1395,7 +1390,7 @@ function SSK_Gui:build_buffer_panel()
           self.owner:copy_to_new()
         end,
       },        
-      self.vb:button{
+      vb:button{
         id = "ssk_buffer_paste",
         text = 'Paste',
         tooltip = "Redraw the memorized (clipped) waveform to the selected range.",
@@ -1404,7 +1399,7 @@ function SSK_Gui:build_buffer_panel()
           self.owner:buffer_redraw()
         end
       }, 
-      self.vb:button{
+      vb:button{
         id = "ssk_buffer_mix_paste",
         text = 'Mix-Paste',
         tooltip = "Mix the memorized (clipped) waveform with the selected range.",
@@ -1413,7 +1408,7 @@ function SSK_Gui:build_buffer_panel()
           self.owner:buffer_mixdraw()
         end
       },        
-      self.vb:button{
+      vb:button{
         id = "ssk_buffer_swap",
         text = 'Swap',
         tooltip = "Swap the memorized (clipped) waveform with the selected range.",
@@ -1430,37 +1425,39 @@ end
 
 function SSK_Gui:build_selection_panel()
 
-  return self.vb:column{     
+  local vb = self.vb
+
+  return vb:column{     
     style = SSK_Gui.PANEL_STYLE,
     margin = SSK_Gui.PANEL_INNER_MARGIN,
-    self.vb:space{
+    vb:space{
       width = SSK_Gui.DIALOG_INNER_WIDTH,
     },
-    self.vb:row{
-      self.vb:row{
+    vb:row{
+      vb:row{
         self:build_panel_header("Selection",function()
           --             
         end,prefs.display_selection_panel),          
-        self.vb:text{
+        vb:text{
           id = "ssk_selection_header_txt",
           width = SSK_Gui.DIALOG_INNER_WIDTH - 200,
         },
       },    
-      self.vb:row{
+      vb:row{
         tooltip = "Sync selection with waveform editor",
-        self.vb:text{
+        vb:text{
           text = "Sync"
         },
-        self.vb:checkbox{
+        vb:checkbox{
           id = "ssk_sync_with_renoise",
           bind = prefs.sync_with_renoise,
         },          
       },  
-      self.vb:popup{
+      vb:popup{
         id = "ssk_selection_unit_popup",
         tooltip = "Choose how the selection should be displayed",
         items = {
-          "OS Effect",
+          "0xOffset",
           "Beats",
           "Samples",
         },
@@ -1468,13 +1465,13 @@ function SSK_Gui:build_selection_panel()
       }        
     },
     
-    self.vb:column{
+    vb:column{
       id = "ssk_selection_panel",
       visible = false,
-      self.vb:space{
+      vb:space{
         height = SSK_Gui.ITEM_SPACING,
       },
-      self.vb:column{
+      vb:column{
         self:build_selection_start_row(),
         self:build_selection_length_row(),
       },
@@ -1486,23 +1483,25 @@ end
 
 function SSK_Gui:build_generate_panel()
 
-  return self.vb:column{
+  local vb = self.vb
+
+  return vb:column{
     style = SSK_Gui.PANEL_STYLE,
     margin = SSK_Gui.PANEL_INNER_MARGIN,
-    self.vb:space{
+    vb:space{
       width = SSK_Gui.DIALOG_INNER_WIDTH,
     },
     self:build_panel_header("Generate",function()
     end,prefs.display_generate_panel),
-    self.vb:column{
+    vb:column{
       id = "ssk_generate_panel",
       visible = false,
-      self.vb:row{
-        self.vb:text{
+      vb:row{
+        vb:text{
           width = SSK_Gui.LABEL_WIDTH,
           text = "Random",
         },
-        self.vb:button{
+        vb:button{
           id = "ssk_generate_random_bt",
           bitmap = self.btmp.run_random,
           width = SSK_Gui.WIDE_BT_WIDTH,
@@ -1513,7 +1512,7 @@ function SSK_Gui:build_generate_panel()
             self.owner:random_wave()
           end
         },
-        self.vb:button{
+        vb:button{
           id = "ssk_generate_repeat_random_bt",
           width = SSK_Gui.WIDE_BT_WIDTH,
           height = SSK_Gui.TALL_BT_HEIGHT,
@@ -1524,8 +1523,8 @@ function SSK_Gui:build_generate_panel()
           end
         },
       },
-      self.vb:row{
-        self.vb:text{
+      vb:row{
+        vb:text{
           width = SSK_Gui.LABEL_WIDTH,
           text = "Noise",
         },
@@ -1534,9 +1533,9 @@ function SSK_Gui:build_generate_panel()
         self:build_violet_noise(), 
         --self:build_pink_noise(),
       },
-      self.vb:row{
+      vb:row{
         --spacing = SSK_Gui.NULL_SPACING,
-        self.vb:text{
+        vb:text{
           width = SSK_Gui.LABEL_WIDTH,
           text = "Wave",
         },
@@ -1545,33 +1544,33 @@ function SSK_Gui:build_generate_panel()
         self:build_square_wave(),
         self:build_triangle_wave(), 
       },
-      self.vb:space{
+      vb:space{
         height = SSK_Gui.ITEM_SPACING,
       },
-      self.vb:row{
-        self.vb:space{
+      vb:row{
+        vb:space{
           width = 20,
         },
-        self.vb:column{
-          self.vb:row{
+        vb:column{
+          vb:row{
             tooltip = "When enabled, changes to cycle/shift etc. will automatically"
                     .."\ncause the selected waveform to be re-calculated",            
-            self.vb:checkbox{
+            vb:checkbox{
               id = 'ssk_auto_generate',
               bind = prefs.auto_generate,
             },
-            self.vb:text{
+            vb:text{
               text = "Apply changes in real-time",
               width = SSK_Gui.LABEL_WIDTH,
             },  
           },         
-          self.vb:row{
+          vb:row{
             tooltip = "When enabled, waveforms will be generated using band-limiting",
-            self.vb:checkbox{
+            vb:checkbox{
               id = 'band_limited',
               bind = prefs.band_limited,
             },
-            self.vb:text{
+            vb:text{
               text = "Band-limiting",
               width = SSK_Gui.LABEL_WIDTH,
             },  
@@ -1580,7 +1579,7 @@ function SSK_Gui:build_generate_panel()
         },
         self:build_duty_cycle(), 
       },
-      self.vb:space{
+      vb:space{
         height = SSK_Gui.ITEM_SPACING,
       },      
     },
@@ -1653,21 +1652,23 @@ end
 
 function SSK_Gui:build_percent_factor(label,obs)  
 
-  return self.vb:row{
+  local vb = self.vb
+
+  return vb:row{
     spacing = SSK_Gui.NULL_SPACING,
-    self.vb:text{
+    vb:text{
       text = "Factor",
       width = SSK_Gui.SMALL_LABEL_WIDTH,
     },
-    self.vb:valuebox{
+    vb:valuebox{
       min = 0,
       max = 100,
       bind = obs,
     },
-    self.vb:space{
+    vb:space{
       width = SSK_Gui.ITEM_MARGIN,
     },
-    self.vb:text{
+    vb:text{
       text = "%",
     }
   }
@@ -1678,25 +1679,27 @@ end
 
 function SSK_Gui:build_modify_panel()
 
-  return self.vb:column{
+  local vb = self.vb
+
+  return vb:column{
     style = SSK_Gui.PANEL_STYLE,
     margin = SSK_Gui.PANEL_INNER_MARGIN,
-    self.vb:space{
+    vb:space{
       width = SSK_Gui.DIALOG_INNER_WIDTH,
     },
-    self.vb:row{
+    vb:row{
       self:build_panel_header("Modify",function()
       end,prefs.display_modify_panel),
     },    
-    self.vb:column{    
+    vb:column{    
       id = "ssk_modify_panel",
       visible = false, 
-      self.vb:column{
-        self.vb:row{
+      vb:column{
+        vb:row{
           style = SSK_Gui.ROW_STYLE,
           margin = SSK_Gui.ROW_MARGIN,
           spacing = SSK_Gui.ROW_SPACING,
-          self.vb:text{
+          vb:text{
             text = "Shift",
             width = SSK_Gui.LABEL_WIDTH,
           },
@@ -1705,108 +1708,108 @@ function SSK_Gui:build_modify_panel()
           self:build_phase_shift_fine_plus(),
           self:build_phase_shift_fine_minus(), 
         },         
-        self.vb:row{
+        vb:row{
           style = SSK_Gui.ROW_STYLE,
           margin = SSK_Gui.ROW_MARGIN,
           spacing = SSK_Gui.ROW_SPACING,
-          self.vb:text{
+          vb:text{
             text = "Center",
             width = SSK_Gui.LABEL_WIDTH,
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_generate_fade_center_a_bt",
             width = SSK_Gui.WIDE_BT_WIDTH,
             bitmap = self.btmp.center_fade,
             height = SSK_Gui.TALL_BT_HEIGHT,
             tooltip = "Fade center",
             notifier = function()
-              self.owner:set_fade(SSK.center_fade_fn)
+              self.owner.modify:set_fade(SSK_Modify.center_fade_fn)
             end,
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_generate_fade_center_b_bt",
             width = SSK_Gui.WIDE_BT_WIDTH,
             bitmap = self.btmp.center_amplify,
             height = SSK_Gui.TALL_BT_HEIGHT,
             tooltip = "Amplify center",
             notifier = function()
-              self.owner:set_fade(SSK.center_amplify_fn)
+              self.owner.modify:set_fade(SSK_Modify.center_amplify_fn)
             end,
           }, 
           self:build_percent_factor("Factor",prefs.center_fade_percent),           
         },
-        self.vb:row{
+        vb:row{
           style = SSK_Gui.ROW_STYLE,
           margin = SSK_Gui.ROW_MARGIN,
           spacing = SSK_Gui.ROW_SPACING,
-          self.vb:text{
+          vb:text{
             text = "Multiply",
             width = SSK_Gui.LABEL_WIDTH,
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_generate_multiply_lower_bt",
             width = SSK_Gui.WIDE_BT_WIDTH,
             bitmap = self.btmp.multiply_lower,
             height = SSK_Gui.TALL_BT_HEIGHT,
             tooltip = "Lower amplitude",
             notifier = function()
-              self.owner:set_fade(SSK.multiply_lower_fn)
+              self.owner.modify:set_fade(SSK_Modify.multiply_lower_fn)
             end,
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_generate_multiply_raise_bt",
             width = SSK_Gui.WIDE_BT_WIDTH,
             bitmap = self.btmp.multiply_raise,
             height = SSK_Gui.TALL_BT_HEIGHT,
             tooltip = "Raise amplitude",
             notifier = function()
-              self.owner:set_fade(SSK.multiply_raise_fn)
+              self.owner.modify:set_fade(SSK_Modify.multiply_raise_fn)
             end,
           },
           self:build_percent_factor("Factor",prefs.multiply_percent),           
         },
-        self.vb:row{
+        vb:row{
           style = SSK_Gui.ROW_STYLE,
           margin = SSK_Gui.ROW_MARGIN,
           spacing = SSK_Gui.ROW_SPACING,
-          self.vb:text{
+          vb:text{
             text = "Fade",
             width = SSK_Gui.LABEL_WIDTH,
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_generate_fade_in_bt",
             width = SSK_Gui.WIDE_BT_WIDTH,
             bitmap = self.btmp.fade_in,
             height = SSK_Gui.TALL_BT_HEIGHT,
             tooltip = "Fade in",
             notifier = function()
-              self.owner:set_fade(SSK.fade_in_fn)
+              self.owner.modify:set_fade(SSK_Modify.fade_in_fn)
             end,
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_generate_fade_out_bt",
             width = SSK_Gui.WIDE_BT_WIDTH,
             bitmap = self.btmp.fade_out,
             height = SSK_Gui.TALL_BT_HEIGHT,
             tooltip = "Fade out",
             notifier = function()
-              self.owner:set_fade(SSK.fade_out_fn)
+              self.owner.modify:set_fade(SSK_Modify.fade_out_fn)
             end,
           }, 
           self:build_percent_factor("Factor",prefs.fade_percent),           
         },
         --[[
-        self.vb:row{
+        vb:row{
           style = SSK_Gui.ROW_STYLE,
           margin = SSK_Gui.ROW_MARGIN,
           --width = "100%",
           spacing = SSK_Gui.ROW_SPACING,
-          self.vb:text{
+          vb:text{
             text = "Resize",
             width = SSK_Gui.LABEL_WIDTH,
             --align = "center"
           },
-          self.vb:button{
+          vb:button{
             id = "ssk_resize_expand_bt",
             width = SSK_Gui.WIDE_BT_WIDTH,
             bitmap = self.btmp.resize_expand,
@@ -1816,7 +1819,7 @@ function SSK_Gui:build_modify_panel()
               self.owner:resize_expand()
             end,
           },           
-          self.vb:button{
+          vb:button{
             id = "ssk_resize_shrink_bt",
             width = SSK_Gui.WIDE_BT_WIDTH,
             bitmap = self.btmp.resize_shrink,
@@ -1829,11 +1832,11 @@ function SSK_Gui:build_modify_panel()
           self:build_percent_factor("Factor",prefs.resize_percent),           
         },
         ]]
-        self.vb:row{
+        vb:row{
           style = SSK_Gui.ROW_STYLE,
           margin = SSK_Gui.ROW_MARGIN,
           spacing = SSK_Gui.ROW_SPACING,
-          self.vb:text{
+          vb:text{
             text = "Ringmod",
             width = SSK_Gui.LABEL_WIDTH,
           },
@@ -1841,14 +1844,23 @@ function SSK_Gui:build_modify_panel()
           self:build_ring_mod_saw(),
           self:build_ring_mod_square(),
           self:build_ring_mod_triangle(),
-          self:build_pd_copy(),
+          vb:button{
+            id = "ssk_generate_pd_copy_bt",
+            text = "PD Copy",
+            width = SSK_Gui.WIDE_BT_WIDTH,
+            height = SSK_Gui.TALL_BT_HEIGHT,
+            tooltip = SSK_Gui.MSG_COPY_PD,
+            notifier = function()
+              self.owner.modify:pd_copy()
+            end,
+          },
         },
-        self.vb:row{      
-          self.vb:space{
+        vb:row{      
+          vb:space{
             width = SSK_Gui.ITEM_HEIGHT,
           },        
           self:build_fade_cycle_shift_set(), 
-          self.vb:space{
+          vb:space{
             height = SSK_Gui.ITEM_SPACING,
           },
           self:build_pd_duty_cycle(), 
@@ -1864,22 +1876,24 @@ end
 
 function SSK_Gui:build_selection_start_row()
 
-  return self.vb:row{ 
-    self.vb:text{
+  local vb = self.vb
+
+  return vb:row{ 
+    vb:text{
       width = SSK_Gui.LABEL_WIDTH - SSK_Gui.TOGGLE_SIZE - 2,
       text = "Start"
     },    
-    self.vb:button{
+    vb:button{
       text = "➙",
       id = "ssk_get_selection_start",
       tooltip = "Get selection start in the waveform editor.",
       notifier = function()
-        self.owner:obtain_sel_start_from_editor()        
+        self.owner.selection:obtain_start_from_editor()        
       end,
     },    
-    self.vb:row{
+    vb:row{
       spacing = vLib.NULL_SPACING,
-      self.vb:textfield{ 
+      vb:textfield{ 
         id = "ssk_selection_start",
         width = SSK_Gui.INPUT_WIDTH,
         tooltip = SSK_Gui.MSG_GET_LENGTH_BEAT_TIP, 
@@ -1890,28 +1904,28 @@ function SSK_Gui:build_selection_start_row()
             return
           end
           local is_start = true -- allow first frame
-          local offset,beat,frame = self.owner:interpret_selection_input(x,is_start)
+          local offset,beat,frame = self.owner.selection:interpret_input(x,is_start)
           if (not frame or not beat or not offset) then 
             renoise.app():show_error(SSK_Gui.MSG_GET_LENGTH_FRAME_ERR)
           else 
-            self.owner.sel_start_frames = frame
-            self.owner.sel_start_beats = beat
-            self.owner.sel_start_offset = offset
+            self.owner.selection.start_frames = frame
+            self.owner.selection.start_beats = beat
+            self.owner.selection.start_offset = offset
           end
         end
       },
       self:build_spinner("ssk_sel_start_spinner",function(val)
-        self:set_selection_start_via_spinner(val)
+        self.owner.selection:nudge_start(val)
       end,"Increase/decrease the selection start"),    
     },
-    self.vb:button{
+    vb:button{
       text = "Set",
       id = "ssk_selection_apply_start",
       tooltip = "Click to update the selection start (and extend the sample if needed).",
       notifier = function()
-        local sel_length = self.owner.sel_length_frames
-        local sel_start = self.owner.sel_start_frames
-        self.owner:apply_selection_range(sel_length,sel_start)
+        local sel_start = self.owner.selection.start_frames
+        local sel_end = sel_start + self.owner.selection.length_frames
+        self.owner.selection:apply_range(sel_start,sel_end)
       end
     },
 
@@ -1923,22 +1937,24 @@ end
 
 function SSK_Gui:build_selection_length_row()
 
-  return self.vb:row{ 
-    self.vb:text{
+  local vb = self.vb
+
+  return vb:row{ 
+    vb:text{
       width = SSK_Gui.LABEL_WIDTH - SSK_Gui.TOGGLE_SIZE - 2,
       text = "Length"
     },    
-    self.vb:button{
+    vb:button{
       text = "➙",
       id = "ssk_get_selection_length",
       tooltip = "Get length of selection in the waveform editor.",
       notifier = function()
-        self.owner:obtain_sel_length_from_editor()        
+        self.owner.selection:obtain_length_from_editor()        
       end,
     },    
-    self.vb:row{
+    vb:row{
       spacing = vLib.NULL_SPACING,
-      self.vb:textfield{ 
+      vb:textfield{ 
         id = "ssk_selection_length",
         width = SSK_Gui.INPUT_WIDTH,
         tooltip = SSK_Gui.MSG_GET_LENGTH_BEAT_TIP, 
@@ -1948,45 +1964,47 @@ function SSK_Gui:build_selection_length_row()
           if not buffer then 
             return
           end
-          local offset,beat,frame = self.owner:interpret_selection_input(x)
+          local offset,beat,frame = self.owner.selection:interpret_input(x)
           if (not frame or not beat or not offset) then 
             renoise.app():show_error(SSK_Gui.MSG_GET_LENGTH_FRAME_ERR)
           else 
-            self.owner.sel_length_frames = frame
-            self.owner.sel_length_beats = beat
-            self.owner.sel_length_offset = offset
+            self.owner.selection.length_frames = frame
+            self.owner.selection.length_beats = beat
+            self.owner.selection.length_offset = offset
           end
         end
       },
       self:build_spinner("ssk_sel_length_spinner",function(val)
-        self:set_selection_length_via_spinner(val)
+        self.owner.selection:nudge_length(val)
       end,"Increase/decrease the selection length"),
     },
-    self.vb:button{
+    vb:button{
       text = "Set",
       id = "ssk_selection_apply_length",
       tooltip = "Click to update the selection length (and extend the sample if needed).",
       notifier = function()
-        self.owner:apply_selection_range(self.owner.sel_length_frames)
+        local sel_start = self.owner.selection.start_frames
+        local sel_end = sel_start + self.owner.selection.length_frames
+        self.owner.selection:apply_range(sel_start,sel_end)
       end
     },
-    self.vb:button{
+    vb:button{
       id = "ssk_selection_multiply_length",
       text = "*",
       tooltip = "Multiply the length of the selection range .",
       notifier = function()
-        self.owner:selection_multiply_length()
+        self.owner.selection:multiply_length()
       end,
     },
-    self.vb:button{
+    vb:button{
       id = "ssk_selection_divide_length",
       text = "/",
       tooltip = "Reset the length of the selection range with reciprocal number.",
       notifier = function()
-        self.owner:selection_divide_length()
+        self.owner.selection:divide_length()
       end,
     },
-    self.vb:textfield{ 
+    vb:textfield{ 
       id = "multiply_setend",
       text = tostring(prefs.multiply_setend.value),
       tooltip = SSK_Gui.MSG_MULTIPLY_TIP,
@@ -2004,7 +2022,10 @@ function SSK_Gui:build_selection_length_row()
 end 
 
 ---------------------------------------------------------------------------------------------------
+-- Generators
+---------------------------------------------------------------------------------------------------
   -- Draw sin wave 2pi
+  
 function SSK_Gui:build_sin_2pi()  
   return self.vb:button{
     id = "ssk_generate_sin_wave_bt",
@@ -2013,13 +2034,14 @@ function SSK_Gui:build_sin_2pi()
     height = SSK_Gui.TALL_BT_HEIGHT,
     tooltip = "Draw sin wave.",
     notifier = function()
-      self.owner:generate_sine_wave()
+      self.owner.generator:sine_wave()
     end,
   }
 end
 
 ---------------------------------------------------------------------------------------------------
   -- saw wave
+
 function SSK_Gui:build_saw_wave()  
   
   return self.vb:button{
@@ -2029,7 +2051,7 @@ function SSK_Gui:build_saw_wave()
     height = SSK_Gui.TALL_BT_HEIGHT,
     tooltip = "Draw saw wave.",
     notifier = function()
-      self.owner:generate_saw_wave()
+      self.owner.generator:saw_wave()
     end,
   }
 end
@@ -2046,7 +2068,7 @@ function SSK_Gui:build_square_wave()
     height = SSK_Gui.TALL_BT_HEIGHT,
     tooltip = "Draw square wave.",
     notifier = function()
-      self.owner:generate_square_wave()
+      self.owner.generator:square_wave()
     end,
   }
 end
@@ -2062,7 +2084,7 @@ function SSK_Gui:build_triangle_wave()
     height = SSK_Gui.TALL_BT_HEIGHT,
     tooltip = "Draw triangle wave.",
     notifier = function()
-      self.owner:generate_triangle_wave()
+      self.owner.generator:triangle_wave()
     end,
   }
 end
@@ -2072,13 +2094,15 @@ end
 
 function SSK_Gui:build_cycle_shift_set()
 
-  return self.vb:column{
-    self.vb:row{
-      self.vb:text{
+  local vb = self.vb
+
+  return vb:column{
+    vb:row{
+      vb:text{
         text = "Cycle",
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:textfield{
+      vb:textfield{
         id = 'mod_cycle',
         text = tostring(prefs.mod_cycle.value),
         width = SSK_Gui.FORMULA_WIDTH,
@@ -2094,12 +2118,12 @@ function SSK_Gui:build_cycle_shift_set()
         end
       },
     },
-    self.vb:row{
-      self.vb:text{
+    vb:row{
+      vb:text{
         text = "Shift",
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:valuebox{
+      vb:valuebox{
         id = 'mod_shift',
         bind = prefs.mod_shift,
         min = -100,
@@ -2115,14 +2139,14 @@ function SSK_Gui:build_cycle_shift_set()
           --prefs.mod_shift.value = x/100
         end
       },
-      self.vb:text {
+      vb:text {
         text = "% "
       },      
-      self.vb:button{
+      vb:button{
         text = "Reset",
         tooltip = "Reset values.",
         notifier = function()
-          self.vb.views.mod_cycle.text = '1'
+          vb.views.mod_cycle.text = '1'
           prefs.mod_shift.value= 0
         end,
       },      
@@ -2137,24 +2161,26 @@ end
 
 function SSK_Gui:build_duty_cycle()
 
-  return self.vb:column{
-    self.vb:row{
+  local vb = self.vb
+
+  return vb:column{
+    vb:row{
       tooltip = "When enabled, duty cycle applies to the generated waveforms",
-      self.vb:checkbox{
+      vb:checkbox{
         id = 'duty_onoff',
         bind = prefs.mod_duty_onoff,
       },  
-      self.vb:text{
+      vb:text{
         text = "Duty cycle",
       },  
     },
     -- Input duty cycle 
-    self.vb:row{
-      self.vb:text{
+    vb:row{
+      vb:text{
         text = "Cycle",
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:valuebox{
+      vb:valuebox{
         id = 'duty_fiducial',
         value = prefs.mod_duty.value,
         min = 0,
@@ -2170,25 +2196,25 @@ function SSK_Gui:build_duty_cycle()
           prefs.mod_duty.value = tonumber(x)
         end
       },
-      self.vb:text{
+      vb:text{
         text = "% "
       },
-      self.vb:button{
+      vb:button{
         text = "Reset",
         tooltip = "Reset duty cycle values.",
         notifier = function()
-          self.vb.views.duty_fiducial.value = 50
-          self.vb.views.duty_variation.value = 0
-          self.vb.views.duty_var_frq.value = 1
+          vb.views.duty_fiducial.value = 50
+          vb.views.duty_variation.value = 0
+          vb.views.duty_var_frq.value = 1
         end,
       },
     },    
-    self.vb:row{
-      self.vb:text{
+    vb:row{
+      vb:text{
         text = "Var",
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:valuebox{
+      vb:valuebox{
         id = 'duty_variation',
         value = prefs.mod_duty_var.value,
         min = -100,
@@ -2204,16 +2230,16 @@ function SSK_Gui:build_duty_cycle()
           prefs.mod_duty_var.value = x
         end
       },
-      self.vb:text{
+      vb:text{
         text = "% "
       },
     },
-    self.vb:row{
-      self.vb:text{
+    vb:row{
+      vb:text{
         text = "Freq",
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:valuebox{
+      vb:valuebox{
         id = 'duty_var_frq',
         value = prefs.mod_duty_var_frq.value,
         min = -10000,
@@ -2243,7 +2269,7 @@ function SSK_Gui:build_white_noise()
     bitmap = self.btmp.white_noise,
     tooltip = "White noise",
     notifier = function()
-      self.owner:generate_white_noise()
+      self.owner.generator:white_noise()
     end,
   }
 end
@@ -2258,7 +2284,7 @@ function SSK_Gui:build_brown_noise()
     bitmap = self.btmp.brown_noise,
     tooltip = "Brown noise",
     notifier = function()
-      self.owner:generate_brown_noise()    
+      self.owner.generator:brown_noise()    
     end,
   }
 end 
@@ -2273,7 +2299,7 @@ function SSK_Gui:build_violet_noise()
     bitmap = self.btmp.violet_noise,
     tooltip = "Violet noise",
     notifier = function()
-      self.owner:generate_violet_noise()    
+      self.owner.generator:violet_noise()    
     end,
   }
 end 
@@ -2295,6 +2321,8 @@ end
 ]]
 
 ---------------------------------------------------------------------------------------------------
+-- Modifiers
+---------------------------------------------------------------------------------------------------
 -- Phase shift 1/24 +
 
 function SSK_Gui:build_phase_shift_plus()  
@@ -2304,7 +2332,7 @@ function SSK_Gui:build_phase_shift_plus()
     bitmap = self.btmp.phase_shift_plus,
     tooltip = "Phase shift +1/24",
     notifier = function()
-      self.owner:phase_shift_with_ratio(1/24)
+      self.owner.modify:phase_shift_with_ratio(1/24)
     end,
   }
 end  
@@ -2319,7 +2347,7 @@ function SSK_Gui:build_phase_shift_minus()
     bitmap = self.btmp.phase_shift_minus,
     tooltip = "Phase shift -1/24",
     notifier = function()
-      self.owner:phase_shift_with_ratio(-1/24)
+      self.owner.modify:phase_shift_with_ratio(-1/24)
     end,
   }
 end 
@@ -2334,7 +2362,7 @@ function SSK_Gui:build_phase_shift_fine_plus()
     bitmap = self.btmp.phase_shift_fine_plus,
     tooltip = "Phase shift +1sample",
     notifier = function()
-      self.owner:phase_shift_fine(1)
+      self.owner.modify:phase_shift_fine(1)
     end,
   }
 end 
@@ -2349,7 +2377,7 @@ function SSK_Gui:build_phase_shift_fine_minus()
     bitmap = self.btmp.phase_shift_fine_minus,
     tooltip = "Phase shift -1sample",
     notifier = function()
-      self.owner:phase_shift_fine(-1)
+      self.owner.modify:phase_shift_fine(-1)
     end,
   }
 end 
@@ -2365,7 +2393,7 @@ function SSK_Gui:build_ring_mod_sin()
     height = SSK_Gui.TALL_BT_HEIGHT,
     tooltip = "Fade (Ring modulation) with sin",
     notifier = function()
-      self.owner:fade_mod_sin()
+      self.owner.modify:fade_mod_sin()
     end,
   }
 end 
@@ -2381,7 +2409,7 @@ function SSK_Gui:build_ring_mod_saw()
     height = SSK_Gui.TALL_BT_HEIGHT,
     tooltip = "Fade (Ring modulation) witn saw",
     notifier = function()
-      self.owner:fade_mod_saw()
+      self.owner.modify:fade_mod_saw()
     end,
   }
 end 
@@ -2397,7 +2425,7 @@ function SSK_Gui:build_ring_mod_square()
     height = SSK_Gui.TALL_BT_HEIGHT,
     tooltip = "Fade (Ring modulation) witn square",
     notifier = function()
-      self.owner:fade_mod_square()
+      self.owner.modify:fade_mod_square()
     end,
   }
 end 
@@ -2413,39 +2441,26 @@ function SSK_Gui:build_ring_mod_triangle()
     height = SSK_Gui.TALL_BT_HEIGHT,
     tooltip = "Fade (Ring modulation) witn triangle",
     notifier = function()
-      self.owner:fade_mod_triangle()
+      self.owner.modify:fade_mod_triangle()
     end,
   }
 end 
 
-
----------------------------------------------------------------------------------------------------
-
-function SSK_Gui:build_pd_copy()
-  return self.vb:button{
-    id = "ssk_generate_pd_copy_bt",
-    text = "PD Copy",
-    width = SSK_Gui.WIDE_BT_WIDTH,
-    height = SSK_Gui.TALL_BT_HEIGHT,
-    tooltip = SSK_Gui.MSG_COPY_PD,
-    notifier = function()
-      self.owner:pd_copy()
-    end,
-  }
-end 
 
 ---------------------------------------------------------------------------------------------------
 -- Set phase distortion values in feding & PD-copy 
 
 function SSK_Gui:build_fade_cycle_shift_set()
 
-  return self.vb:column{
-    self.vb:row{
-      self.vb:text{
+  local vb = self.vb
+
+  return vb:column{
+    vb:row{
+      vb:text{
         text = "Cycle",  
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:textfield{
+      vb:textfield{
         id = 'mod_fade_cycle',
         width = SSK_Gui.FORMULA_WIDTH,
         text = tostring(prefs.mod_fade_cycle.value),
@@ -2462,12 +2477,12 @@ function SSK_Gui:build_fade_cycle_shift_set()
         end
       },
     },
-    self.vb:row{
-      self.vb:text{
+    vb:row{
+      vb:text{
         text = "Shift",
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:valuebox{
+      vb:valuebox{
         id = 'mod_fade_shift',
         value = prefs.mod_fade_shift.value*100,
         min = -100,
@@ -2483,14 +2498,14 @@ function SSK_Gui:build_fade_cycle_shift_set()
           prefs.mod_fade_shift.value = x/100
         end
       },
-      self.vb:text{
+      vb:text{
         text = "% "
       },    
-      self.vb:button{
+      vb:button{
         text = "Reset",
         tooltip = "Reset values.",
         notifier = function()
-          self.vb.views.mod_fade_cycle.text = '1'
+          vb.views.mod_fade_cycle.text = '1'
           prefs.mod_fade_shift.value = 0
         end,
       },
@@ -2502,23 +2517,26 @@ end
 -- Duty cycle for fade & phase distortion copy
 
 function SSK_Gui:build_pd_duty_cycle()
-  return self.vb:column{
-    self.vb:row{
+
+  local vb = self.vb 
+
+  return vb:column{
+    vb:row{
       tooltip = "When enabled, duty cycle applies to the generated waveforms",      
-      self.vb:checkbox{
+      vb:checkbox{
         id = 'pd_duty_onoff',
         bind = prefs.mod_pd_duty_onoff,
       },  
-      self.vb:text{
+      vb:text{
         text = "Duty Cycle"
       },  
     },
-    self.vb:row{    
-      self.vb:text{
+    vb:row{    
+      vb:text{
         text = "Cycle",     
         width = SSK_Gui.SMALL_LABEL_WIDTH, 
       },
-      self.vb:valuebox{
+      vb:valuebox{
         id = 'pd_duty_fiducial',
         value = prefs.mod_pd_duty.value,
         min = 0,
@@ -2534,25 +2552,25 @@ function SSK_Gui:build_pd_duty_cycle()
           prefs.mod_pd_duty.value = tonumber(x)
         end
       },
-      self.vb:text{
+      vb:text{
         text = "% "
       },
-      self.vb:button{
+      vb:button{
         text = "Reset",
         tooltip = "Reset values.",
         notifier = function()
-          self.vb.views.pd_duty_fiducial.value = 50
-          self.vb.views.pd_duty_variation.value = 0
-          self.vb.views.pd_duty_var_frq.value = 1
+          vb.views.pd_duty_fiducial.value = 50
+          vb.views.pd_duty_variation.value = 0
+          vb.views.pd_duty_var_frq.value = 1
         end,
       },      
     },
-    self.vb:row{
-      self.vb:text{
+    vb:row{
+      vb:text{
         text = "Var",
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:valuebox{
+      vb:valuebox{
         id = 'pd_duty_variation',
         value = self.owner.mod_pd_duty_var,
         min = -100,
@@ -2568,16 +2586,16 @@ function SSK_Gui:build_pd_duty_cycle()
           self.owner.mod_pd_duty_var = tonumber(x)
         end
       },
-      self.vb:text{
+      vb:text{
         text = "% "
       },
     },
-    self.vb:row{
-      self.vb:text{
+    vb:row{
+      vb:text{
         text = "Freq",
         width = SSK_Gui.SMALL_LABEL_WIDTH,
       },
-      self.vb:valuebox{
+      vb:valuebox{
         id = 'pd_duty_var_frq',
         value = self.owner.mod_pd_duty_var_frq,
         min = -10000,
@@ -2632,7 +2650,7 @@ function SSK_Gui:build_ks_len_input()
               .."\nThis determines the pitch."
               .."\nYou can use some letters that represents pitch, e.g.'C#4'.",      
       notifier = function(x)
-        local xx = SSK.string_to_frames(x,prefs.A4hz.value) 
+        local xx = SSK_Selection.string_to_frames(x,prefs.A4hz.value) 
         if xx == nil
         then
           renoise.app():show_error("Enter a  non-zero number, or a numerical formula. This decides string pitch.")
@@ -2710,7 +2728,7 @@ function SSK_Gui:build_ks_reset()
     text = "Reset",
     tooltip = "Reset values.",
     notifier = function()
-      self.vb.views.ks_len.text = tostring(SSK.string_to_frames('C-4',prefs.A4hz.value))
+      self.vb.views.ks_len.text = tostring(SSK_Selection.string_to_frames('C-4',prefs.A4hz.value))
       self.vb.views.ks_mix.value = 0
       self.vb.views.ks_amp.value = 0
     end,
