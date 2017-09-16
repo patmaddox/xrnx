@@ -276,7 +276,7 @@ function vButtonStrip:update()
       table.insert(widths,v.weight*unit_w)
     end 
     --print("widths PRE",rprint(widths))
-    widths = vLib.calculate_sizes(widths,self.width,self.spacing,self.min_segment_size)
+    widths = vLib.distribute_sizes(widths,self.width,self.spacing,self.min_segment_size)
     --print("widths POST",rprint(widths))
     -- we have our widths, now render...
     for k,v in ipairs(self.items) do

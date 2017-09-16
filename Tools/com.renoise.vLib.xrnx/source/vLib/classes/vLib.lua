@@ -79,8 +79,8 @@ end
 -- @param spacing (number), amount of spacing applied to/between items (default to 0)
 -- @param min_width (number), the minimum for a single size (default to 1)
 
-function vLib.calculate_sizes(sizes,target,spacing,min_width)
-  TRACE("vLib.calculate_sizes(sizes,target,spacing,min_width)",sizes,target,spacing,min_width)
+function vLib.distribute_sizes(sizes,target,spacing,min_width)
+  TRACE("vLib.distribute_sizes(sizes,target,spacing,min_width)",sizes,target,spacing,min_width)
 
   if not spacing then 
     spacing = 0

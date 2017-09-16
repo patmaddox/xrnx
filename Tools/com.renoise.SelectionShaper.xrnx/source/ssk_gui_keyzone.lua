@@ -59,7 +59,7 @@ function SSK_Gui_Keyzone:__init(...)
 
 
   -- table<vSampleMapping>
-  self._keyzone = {}
+  self._mappings = {}
   -- table<vButtonStrip>
   self._rows = {}
   -- table {...} 
@@ -219,10 +219,14 @@ function SSK_Gui_Keyzone:build()
   self:_clear()
 
   -- compute layout
-  self._keyzone = xKeyZone.create_multisample_layout(
-    self.note_steps,self.note_min,self.note_max,
-    self.vel_steps,self.vel_min,self.vel_max
-  )
+  self._mappings = xKeyZone.create_multisample_layout(xKeyZoneLayout{
+    note_steps = self.note_steps,
+    note_min = self.note_min,
+    note_max = self.note_max,
+    vel_steps = self.vel_steps,
+    vel_min = self.vel_min,
+    vel_max = self.vel_max
+  })
 
   -- compute "rows" 
   self:_compute_velocities()
@@ -230,7 +234,7 @@ function SSK_Gui_Keyzone:build()
   for k,v in ipairs(self._row_data) do 
     table.insert(heights,v.weight)
   end
-  heights = vLib.calculate_sizes(heights,self.height,spacing)
+  heights = vLib.distribute_sizes(heights,self.height,spacing)
 
   -- create strips 
   for k,v in ipairs(self._row_data) do 
