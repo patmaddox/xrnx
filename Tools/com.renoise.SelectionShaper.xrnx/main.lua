@@ -26,8 +26,8 @@ local app = nil
 
 _trace_filters = {"^vButtonStrip*"}
 --_trace_filters = {"^SSK_Gui_Keyzone*"}
-_trace_filters = {".*"}
 _trace_filters = nil
+_trace_filters = {".*"}
 
 ---------------------------------------------------------------------------------------------------
 -- Include required files 
@@ -53,6 +53,7 @@ require (_xlibroot..'xSample')
 require (_xlibroot..'xSampleMapping')
 require (_xlibroot..'xSampleBuffer')
 require (_xlibroot..'xSampleBufferOperation')
+require (_xlibroot..'xPersistentSettings')
 require (_xlibroot..'xInstrument')
 require (_xlibroot..'xNoteColumn')
 
@@ -61,9 +62,13 @@ require ('source/ssk_prefs')
 renoise.tool().preferences = SSK_Prefs()
 local prefs = renoise.tool().preferences
 
+require ('source/ssk_config')
 require ('source/gui_util')
 require ('source/ssk_gui')
 require ('source/ssk_gui_keyzone')
+require ('source/ssk_selection')
+require ('source/ssk_generator')
+require ('source/ssk_modify')
 require ('source/ssk_dialog_create')
 require ('source/ssk')
 
