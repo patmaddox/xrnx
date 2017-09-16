@@ -39,7 +39,7 @@ require (_xlibroot.."xInstrument")
 require (_xlibroot.."xOscClient")
 require (_xlibroot.."xNoteColumn")
 require (_xlibroot.."xPatternSequencer")
-require (_xlibroot.."xSongSettings")
+require (_xlibroot.."xPersistentSettings")
 require (_xlibroot.."xCursorPos")
 
 
