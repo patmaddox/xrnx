@@ -12,7 +12,8 @@ Manage processing of sample buffers
 Use this class to 
 * Automatically prepare/finalize buffer before/after processing 
 * Keep keyzones and phrases intact while creating new/temp sample [1] 
-* Maintain selection size, loop range and zoom settings 
+* Keep/copy basic sample properties like transpose, fine-tune etc. 
+* Retain/restore selection size, loop range and zoom settings 
 * TODO Run multiple concurrent operations (process slicing)
 
 [1]: Modifying a sample via the Renoise API can result in changes to the keyzone and/or phrases, due to the creation of a temporary sample. This class can automatically detect such changes and retain the original values. 
@@ -51,7 +52,7 @@ function xSampleBufferOperation:__init(...)
   -- boolean, restore/preserve loop settings
   self.restore_loop = cReflection.as_boolean(args.restore_loop,false)
   -- boolean, restore/preserve editor zoom settings
-  self.restore_zoom = cReflection.as_boolean(args.restore_loop,false)
+  self.restore_zoom = cReflection.as_boolean(args.restore_zoom,false)
   -- number, define a custom sample index (otherwise after provided)
   self.force_sample_index = args.force_sample_index 
   -- number, defined a fixed bit sample_rate
@@ -244,6 +245,7 @@ function xSampleBufferOperation:finalize()
       buffer.selected_channel = self._cached_selected_channel
     end 
     if self.restore_zoom then 
+      print("restore_zoom",self._cached_zoom_factor)
       buffer.display_range = {
         self._cached_display_start,
         self._cached_display_start+self._cached_display_length 
