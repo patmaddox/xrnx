@@ -20,10 +20,6 @@ Tools/com.renoise.Soundcloud.xrnx/bin/osx/Share on SoundCloud.app/
 Tools/com.renoise.Soundcloud.xrnx/bin/win/Share on SoundCloud.exe
 Tools/com.renoise.xStream.xrnx/favorites.xml
 Tools/com.renoise.xStream.xrnx/userdata/favorites.xml
-Tools/com.renoise.xStream.xrnx/userdata/favorites.xml
-Tools/com.renoise.xStream.xrnx/userdata/favorites.xml
-Tools/com.renoise.xStream.xrnx/userdata/favorites.xml
-Tools/com.renoise.xStream.xrnx/userdata/favorites.xml
 
 # Symbolic links 
 Tools/com.renoise.VoiceRunner.xrnx/source/vLib
@@ -35,8 +31,6 @@ Tools/com.renoise.PhraseMate.xrnx/source/xLib
 Tools/com.renoise.vLib.xrnx/xLib
 Tools/com.renoise.xRules.xrnx/source/vLib
 Tools/com.renoise.xRules.xrnx/source/xLib
-Tools/com.renoise.xStream.xrnx/source/vLib
-Tools/com.renoise.xStream.xrnx/source/xLib
 Tools/com.renoise.PhraseMate.xrnx/source/vLib
 Tools/com.renoise.VoiceRunner.xrnx/source/cLib
 Tools/com.renoise.Noodletrap.xrnx/classes/cLib
@@ -45,7 +39,6 @@ Tools/com.renoise.vLib.xrnx/cLib
 Tools/com.renoise.xLib.xrnx/source/cLib
 Tools/com.renoise.xRules.xrnx/source/cLib
 Tools/com.renoise.xCleaner.xrnx/source/cLib
-Tools/com.renoise.xStream.xrnx/source/cLib
 Tools/com.renoise.MidiPerformer.xrnx/source/cLib
 Tools/com.renoise.MidiPerformer.xrnx/source/vLib
 Tools/com.renoise.MidiPerformer.xrnx/source/xLib
