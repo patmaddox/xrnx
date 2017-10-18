@@ -586,6 +586,8 @@ end
 function xStreamBuffer:write_output(pos,xinc,num_lines,live_mode)
   TRACE("xStreamBuffer:write_output(pos,xinc,num_lines,live_mode)",pos,xinc,num_lines,live_mode)
 
+  local start_time = os.clock()
+
   if not self.active then 
     LOG("*** xStreamBuffer:write_output - not active")
     return 
@@ -670,6 +672,10 @@ function xStreamBuffer:write_output(pos,xinc,num_lines,live_mode)
 
   end
 
+  if not live_mode then
+    LOG(">>> xStreamBuffer: finished in", os.clock()-start_time,"s")
+  end
+  
 end
 
 ---------------------------------------------------------------------------------------------------
