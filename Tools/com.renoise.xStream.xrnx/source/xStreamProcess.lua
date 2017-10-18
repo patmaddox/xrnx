@@ -33,9 +33,6 @@ function xStreamProcess:__init(xstream)
 
   self.xstream = xstream
 
-  --- xStreamPos
-  self.xpos = xstream.xpos
-
   --- xStreamPrefs, current settings
   self.prefs = renoise.tool().preferences
 
@@ -98,7 +95,7 @@ function xStreamProcess:__init(xstream)
   end)
 
   --- xStreamBuffer, track position and handle streaming ...
-  self.buffer = xStreamBuffer(self.xpos)
+  self.buffer = xStreamBuffer(self.xstream.xpos)
   -- synchronize with preferences
   self.buffer.automation_playmode = self.prefs.automation_playmode.value
   self.prefs.automation_playmode:add_notifier(function()
@@ -142,12 +139,12 @@ end
 ---------------------------------------------------------------------------------------------------
 
 function xStreamProcess:get_active()
-  return self.active_observable.value
+  return self.buffer.active
 end
 
 function xStreamProcess:set_active(val)
   TRACE("xStreamProcess:set_active(val)",val)
-  self.active_observable.value = val
+  self.buffer.active = val
   self:maintain_buffer_mute_state()
 end
 
@@ -167,11 +164,11 @@ end
 ---------------------------------------------------------------------------------------------------
 
 function xStreamProcess:get_track_index()
-  return self.buffer.track_index 
+  return self.buffer.read_track_index 
 end
 
 function xStreamProcess:set_track_index(idx)
-  self.buffer.track_index = idx
+  self.buffer.read_track_index = idx
   if self.active then
     self.buffer:update_read_buffer()
   end
@@ -286,12 +283,12 @@ function xStreamProcess:output()
 
   if self.active and self.models.selected_model then
     if self._scheduled_xinc then
-      if (self.xpos.xinc == self._scheduled_xinc) then
+      if (self.xstream.xpos.xinc == self._scheduled_xinc) then
         self:apply_schedule()
       end
     end
     local live_mode = true
-    self.buffer:write_output(self.xpos.pos,self.xpos.xinc,nil,live_mode)
+    self.buffer:write_output(self.xstream.xpos.pos,self.xstream.xpos.xinc,nil,live_mode)
   end
 
 end
@@ -432,7 +429,7 @@ function xStreamProcess:schedule_item(model_name,preset_index,preset_bank_name)
   -- if scheduled event is going to take place within the
   -- space of already-computed lines, wipe the buffer
   if self._scheduled_xinc then
-    local happening_in_lines = self._scheduled_xinc-self.xpos.xinc
+    local happening_in_lines = self._scheduled_xinc-self.xstream.xpos.xinc
     if (happening_in_lines <= xStreamPos.determine_writeahead()) then
       --print("wipe the buffer")
       self.buffer:wipe_futures()
@@ -447,8 +444,8 @@ end
 function xStreamProcess:compute_scheduling_pos()
   TRACE("xStreamProcess:compute_scheduling_pos()")
 
-  local pos = xSongPos.create(self.xpos.playpos)
-  self._scheduled_xinc = self.xpos.xinc
+  local pos = xSongPos.create(self.xstream.xpos.playpos)
+  self._scheduled_xinc = self.xstream.xpos.xinc
 
   local xinc = 0
   if (self.scheduling == xStreamPos.SCHEDULE.LINE) then
@@ -638,7 +635,7 @@ function xStreamProcess:apply_to_range(from_line,to_line,mode,xinc)
   local cached_active = self.active
   local cached_buffer = self.buffer.output_buffer
   local cached_read_buffer = self.buffer.pattern_buffer
-  local cached_pos = self.xpos.pos
+  local cached_pos = self.xstream.xpos.pos
   local cached_xsongpos = xSongPos.get_defaults()
   -- ignore any kind of loop (those are for realtime only)
   xSongPos.set_defaults({
@@ -649,14 +646,14 @@ function xStreamProcess:apply_to_range(from_line,to_line,mode,xinc)
   -- write output
   self.output_mode = mode -- NB: models can access this value
   self.active = true
-  self.xpos.pos.line = from_line
+  self.xstream.xpos.pos.line = from_line
   self.buffer:write_output(pos,xinc,num_lines,live_mode)
 
   -- restore settings
   self.active = cached_active
   self.buffer.output_buffer = cached_buffer
   self.buffer.pattern_buffer = cached_read_buffer
-  self.xpos.pos = cached_pos
+  self.xstream.xpos.pos = cached_pos
   xSongPos.set_defaults(cached_xsongpos)
 
   self.output_mode = xStreamProcess.OUTPUT_MODE.STREAMING
