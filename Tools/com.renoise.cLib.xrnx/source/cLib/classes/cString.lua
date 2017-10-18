@@ -1,6 +1,6 @@
---[[============================================================================
+--[[===============================================================================================
 cString
-============================================================================]]--
+===============================================================================================]]--
 
 --[[--
 
@@ -12,7 +12,7 @@ Common string-manipulation methods
 
 class 'cString'
 
---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- split string - original script: http://lua-users.org/wiki/SplitJoin 
 -- @param str (string)
 -- @param pat (string) pattern
@@ -40,7 +40,7 @@ function cString.split(str, pat)
 
 end
 
--------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- remove trailing and leading whitespace from string.
 -- http://en.wikipedia.org/wiki/Trim_(8programming)
 -- @param s (string)
@@ -50,7 +50,7 @@ function cString.trim(s)
   return (s:gsub("^%s*(.-)%s*$", "%1"))
 end
 
--------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- capitalize first letter of every word
 -- @param s (string)
 -- @return string
@@ -59,7 +59,7 @@ function cString.capitalize(s)
   return string.gsub(" "..s, "%W%l", string.upper):sub(2)
 end
 
--------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- insert return code whenever we encounter dashes or spaces in a string
 -- TODO keep dashes, and allow a certain length per line
 -- @param str (string)
@@ -72,7 +72,7 @@ function cString.soft_wrap(str)
 
 end
 
--------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- detect counter in string (used for incrementing, unique names)
 
 function cString.detect_counter_in_str(str)
@@ -85,7 +85,7 @@ function cString.detect_counter_in_str(str)
   return count
 end
 
--------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- prepare a string so it can be stored in XML attributes
 -- (strip illegal characters instead of trying to fix them)
 -- @param str (string)
@@ -97,7 +97,7 @@ function cString.sanitize_string(str)
   return str
 end
 
---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- sortable time - date which can be sorted alphabetically
 -- @return string
 
@@ -120,7 +120,22 @@ function cString.get_sortable_time(tstamp)
 
 end
 
---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
+-- format "beat" in the same way as Renoise does it 
+--  e.g: [beat:line:fraction]
+-- @param val (number), 
+-- @return string 
+
+function cString.format_beat(val)
+  TRACE("cString.format_beat(val)",val)
+
+  local line = cLib.fraction(val)*(40/10)
+  local fract = cLib.fraction(line)*256
+  return ("%d.%d.%d"):format(math.floor(val),math.floor(line),fract)
+
+end
+
+---------------------------------------------------------------------------------------------------
 -- Strip line matching pattern, from multiline string
 -- @param str (string) 
 -- @param patt (string) 
@@ -145,7 +160,7 @@ function cString.strip_line(str,patt)
 
 end
 
---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- Strip leading and/or trailing character from string
 -- @param str (string) the string to search
 -- @param chr (string) the character to match, e.g. "\n" or " "
@@ -172,7 +187,7 @@ function cString.strip_leading_trailing_chars(str,chr,rlead,rtrail)
 end
 
 
--------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 -- present a lua table as a formatted string 
 -- @param t (table)
 -- @param args (table) formatting directives

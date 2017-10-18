@@ -13,8 +13,16 @@ See also:
 
 ]]
 
+--=================================================================================================
 
 class 'xTransport'
+
+xTransport.BPM_MINIMUM = 32
+xTransport.BPM_MAXIMUM = 999
+xTransport.LPB_MINIMUM = 1
+xTransport.LPB_MAXIMUM = 256
+xTransport.TPL_MINIMUM = 1
+xTransport.TPL_MAXIMUM = 16
 
 ---------------------------------------------------------------------------------------------------
 -- [Static] Move playback position into next pattern 

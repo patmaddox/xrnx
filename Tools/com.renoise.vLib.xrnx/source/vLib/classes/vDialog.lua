@@ -20,13 +20,15 @@ function vDialog:__init(...)
   local args = cLib.unpack_args(...)
 
   -- string
-  self.dialog_title = self.dialog_title and self.dialog_title or args.dialog_title or vDialog.DEFAULT_DIALOG_TITLE
+  self.dialog_title = self.dialog_title and self.dialog_title 
+    or args.dialog_title or vDialog.DEFAULT_DIALOG_TITLE
 
   -- renoise.View
   self.dialog_content = args.dialog_content or nil
 
   -- function, custom keyhandler
-  self.dialog_keyhandler = args.dialog_keyhandler or function() end
+  self.dialog_keyhandler = self.dialog_keyhandler and self.dialog_keyhandler
+    or args.dialog_keyhandler or function() end
 
   --- function, supply your own idle notifier here
   -- (will only start once Renoise has an active document)

@@ -34,6 +34,7 @@ xPhrase.ERROR = {
   FILE_EXISTS = 3,
 }
 
+--[[
 xPhrase.DOC_PROPS = {
   {
     name = "name",
@@ -167,7 +168,7 @@ xPhrase.DOC_PROPS = {
   },
 
 }
-
+]]
 
 --==============================================================================
 
@@ -642,6 +643,9 @@ end
 -- (using DOC_PROPS to validate input type/range etc.)
 -- @return value (boolean,string,number)
 
+-- TODO reimplement using more basic DOC_PROPS 
+
+--[[
 function xPhrase.set_property(phrase,key,val)
   TRACE("xPhrase.set_property(phrase,key,val)",phrase,key,val)
 
@@ -666,4 +670,4 @@ function xPhrase.set_property(phrase,key,val)
   return cDocument.apply_value(phrase,prop,val)
 
 end
-
+]]

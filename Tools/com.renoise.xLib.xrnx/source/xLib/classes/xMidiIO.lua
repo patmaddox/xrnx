@@ -10,14 +10,14 @@ Extend applications with MIDI input/output
 
 Requires
 xLib
-cObservable
+xObservable
 xMidiInput
 
 ]]
 
 -------------------------------------------------------------------------------
 
-require (_clibroot.."cObservable")
+require (_xlibroot.."xObservable")
 
 class 'xMidiIO' 
 
@@ -109,7 +109,7 @@ function xMidiIO:open_midi_input(port_name)
       end
     )
 
-    self.midi_inputs_observable = cObservable.list_add(self.midi_inputs_observable,port_name)
+    self.midi_inputs_observable = xObservable.list_add(self.midi_inputs_observable,port_name)
 
   else
     LOG("*** Could not create MIDI input device " .. port_name)
@@ -166,7 +166,7 @@ function xMidiIO:close_midi_input(port_name)
   end
 
   self._midi_input_ports[port_name] = nil
-  self.midi_inputs_observable = cObservable.list_remove(self.midi_inputs_observable,port_name)
+  self.midi_inputs_observable = xObservable.list_remove(self.midi_inputs_observable,port_name)
 
 end
 
@@ -202,7 +202,7 @@ function xMidiIO:close_midi_output(port_name)
   end
 
   self._midi_output_ports[port_name] = nil
-  self.midi_outputs_observable = cObservable.list_remove(self.midi_outputs_observable,port_name)
+  self.midi_outputs_observable = xObservable.list_remove(self.midi_outputs_observable,port_name)
 
 end
 

@@ -58,9 +58,22 @@ function cReflection.copy_object_properties(from_class,to_class,level)
 end
 
 ---------------------------------------------------------------------------------------------------
+-- [Static] cast a value to boolean, provide fallback value if undefined
+-- (can be used for setting arguments)
+
+function cReflection.as_boolean(val,fallback)
+  if (type(val)=="nil") then 
+    return fallback
+  else 
+    return cReflection.cast_value(val,"boolean")
+  end
+end
+
+---------------------------------------------------------------------------------------------------
 -- cast variable as basic datatype (boolean,number,string)
 
 function cReflection.cast_value(val,val_type)
+  TRACE("cReflection.cast_value(val,val_type)",val,val_type)
 
   if (val_type == "boolean") then
     if (type(val) == "boolean") then
@@ -77,16 +90,23 @@ function cReflection.cast_value(val,val_type)
       else
         return false
       end
+    elseif (type(val) == "nil") then
+      return false
     else
-      error("Could not cast value as boolean")
+      error(("Could not cast value as boolean (type:%s)"):format(type(val)))
     end
-
   elseif (val_type == "string") then
     return tostring(val)
   elseif (val_type == "number") then
     return tonumber(val)
+  elseif (val_type == "table") then
+    if (type(val) == "table") then
+      return val
+    else 
+      error(("Could not cast value as table (type:%s)"):format(type(val)))
+    end
   else
-    error("Unsupported datatype")
+    error(("Unsupported datatype: %s"):format(val_type))
   end
 
 end
@@ -173,6 +193,22 @@ function cReflection.set_property(str,value)
 
 end
 
+---------------------------------------------------------------------------------------------------
+-- attempt to evaluate expression in string
+-- TODO run in sandbox 
+-- @return number or nil 
+
+function cReflection.evaluate_string(x)
+  TRACE("cReflection.evaluate_string(x)",x)
+  local num
+  local x_str = 'return '..x
+  if (pcall(loadstring(x_str)) == false or loadstring(x_str)()==nil) then  
+    return nil
+  else 
+    num=loadstring(x_str)()
+  end
+  return tonumber(num)
+end
 
 ---------------------------------------------------------------------------------------------------
 -- @param str (string), name of indentifier 

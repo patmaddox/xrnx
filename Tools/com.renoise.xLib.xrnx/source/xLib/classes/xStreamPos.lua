@@ -401,8 +401,8 @@ function xStreamPos:attach_to_song()
     end
   end
 
-  cObservable.attach(rns.selected_pattern_index_observable,pattern_notifier)
-  cObservable.attach(rns.transport.playing_observable,playing_notifier)
+  xObservable.attach(rns.selected_pattern_index_observable,pattern_notifier)
+  xObservable.attach(rns.transport.playing_observable,playing_notifier)
 
 end
 

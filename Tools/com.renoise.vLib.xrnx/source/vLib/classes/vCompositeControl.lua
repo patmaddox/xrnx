@@ -47,7 +47,7 @@ end
 -- @param t (table), 
 
 function vCompositeControl:register_views(t)
-  TRACE("vCompositeControl:register_views(t)",t,rprint(t))
+  TRACE("vCompositeControl:register_views(t)",t)
 
   for k,v in ipairs(t) do
     if not table.is_empty(self.views) 

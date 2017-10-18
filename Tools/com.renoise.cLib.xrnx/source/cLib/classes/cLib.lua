@@ -15,13 +15,12 @@ therefore, it is recommended that any cLib-powered tool includes this file
 
 --=================================================================================================
 
-require (_clibroot.."cValue")
-require (_clibroot.."cNumber")
-
 class 'cLib'
 
 --- placeholder value for nil, storable in table.
 cLib.NIL = {} 
+--- large integer value
+cLib.HUGE_INT = 0xFFFFFFFF
 
 ---------------------------------------------------------------------------------------------------
 -- [Static] LOG statement - invokes cLib.log(). 
@@ -177,7 +176,6 @@ end
 ---------------------------------------------------------------------------------------------------
 -- [Static] 'Wrap/rotate' value within specified range
 -- (with a range of 64-127, a value of 128 should output 65)
--- TODO use % modulo to obtain offset
 
 function cLib.wrap_value(value, min_value, max_value)
   local range = max_value - min_value + 1
@@ -223,19 +221,6 @@ function cLib.is_whole_number(n)
 end
 
 ---------------------------------------------------------------------------------------------------
--- [Static] Convert between note/hertz
-
-function cLib.note_to_hz(note)
-  TRACE('cLib.note_to_hz(note)',note)
-  return math.pow(2, (note - 45) / 12) * 440;
-end
-
-function cLib.hz_to_note(freq)
-  TRACE('cLib.hz_to_note(freq)',freq)
-  return (math.log(freq) - math.log(440)) / math.log(2) + 4;
-end
-
----------------------------------------------------------------------------------------------------
 -- [Static] Greatest common divisor
 
 function cLib.gcd(m,n)
@@ -273,6 +258,30 @@ end
 function cLib.round_value(num) 
   if num >= 0 then return math.floor(num+.5) 
   else return math.ceil(num-.5) end
+end
+
+---------------------------------------------------------------------------------------------------
+-- [Static] Round with precision (http://lua-users.org/wiki/SimpleRound)
+-- @param num (number)
+-- @param idp (number)
+
+function cLib.round_with_precision(num, idp)
+  local mult = 10 ^ (idp or 0)
+  return math.floor(num * mult + 0.5) / mult
+end
+
+---------------------------------------------------------------------------------------------------
+-- [Static] Find fundamental value 
+-- @return number (fundamental), number (repetitions)
+
+function cLib.fundamental(num, precision) 
+  local tmp = num
+  local rep = 0
+  while (not cLib.float_compare(tmp,math.floor(tmp),precision)) do 
+    tmp = tmp + num
+    rep = rep + 1
+  end
+  return math.floor(tmp),rep
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -375,6 +384,7 @@ end
 
 ---------------------------------------------------------------------------------------------------
 -- Count table entries, including mixed types
+-- TODO replaced by table.count?? 
 -- @return int or nil
 
 function cLib.table_count(t)
@@ -420,7 +430,7 @@ function cLib.serialize_table(t,max_depth,longstring)
 
   local rslt = "{\n"
   if not max_depth then
-    max_depth = 9999
+    max_depth = cLib.HUGE_INT
   end
 
 

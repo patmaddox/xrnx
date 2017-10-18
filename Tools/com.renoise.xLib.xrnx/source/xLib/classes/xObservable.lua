@@ -1,5 +1,5 @@
 --[[============================================================================
-cObservable
+xObservable
 ============================================================================]]--
 
 --[[--
@@ -15,10 +15,12 @@ For now, we only care about the "first level" properties - the ones that belong 
 
 ]]
 
+--=================================================================================================
+require (_xlibroot.."xTransport")
 
-class 'cObservable'
+class 'xObservable'
 
-cObservable.SONG = {
+xObservable.SONG = {
   artist_observable = {type="string"},
   name_observable = {type="string"},
   comments_observable = {type="table",subclass="string"}, -- array of strings
@@ -48,9 +50,15 @@ cObservable.SONG = {
   selected_note_column_observable = {type="NoteColumn"},
   transport = {
     playing_observable = {type="boolean"},
-    bpm_observable = {type="number",subclass="float",min=32,max=999},
-    lpb_observable = {type="number",subclass="integer",min=1,max=256},
-    tpl_observable = {type="number",subclass="integer",min=1,max=16},
+    bpm_observable = {
+      type="number",subclass="float",min=xTransport.BPM_MINIMUM,max=xTransport.BPM_MAXIMUM
+    },
+    lpb_observable = {
+      type="number",subclass="integer",min=xTransport.LPB_MINIMUM,max=xTransport.LPB_MAXIMUM
+    },
+    tpl_observable = {
+      type="number",subclass="integer",min=xTransport.LPB_MINIMUM,max=xTransport.TPL_MAXIMUM
+    },
     loop_pattern_observable = {type="boolean"},
     edit_mode_observable = {type="boolean"},
     edit_step_observable = {type="number",subclass="integer",min=0,max=64},
@@ -90,7 +98,7 @@ cObservable.SONG = {
 
 -- refresh when SONG.tracks_observable change
 
-cObservable.Track = {
+xObservable.Track = {
   prefx_volume -> DeviceParameter
   prefx_panning -> DeviceParameter
   prefx_width -> DeviceParameter
@@ -113,14 +121,14 @@ cObservable.Track = {
   devices__observable
 }
 
-cObservable.AudioDevice = {
+xObservable.AudioDevice = {
   display_name_observable
   is_active_observable
   is_maximized_observable
   active_preset_observable
 }
 
-cObservable.DeviceParameter = {
+xObservable.DeviceParameter = {
   is_automated_observable
   is_midi_mapped_observable
   show_in_mixer_observable
@@ -131,27 +139,27 @@ cObservable.DeviceParameter = {
 ]]
 
 -- precomputed version
-cObservable.SONG_BY_TYPE = {}
+xObservable.SONG_BY_TYPE = {}
 
-cObservable.MODE = {
+xObservable.MODE = {
   MANUAL = 1,
   AUTOMATIC = 2,
 }
 
-cObservable.mode = cObservable.MODE.MANUAL
+xObservable.mode = xObservable.MODE.MANUAL
 
 -------------------------------------------------------------------------------
 -- automatically attach to song (auto-renew registered observables)
 
-function cObservable.set_mode(mode)
+function xObservable.set_mode(mode)
 
-  if (cObservable.mode ~= mode) 
-    and (cObservable.mode == cObservable.MODE.AUTOMATIC)
+  if (xObservable.mode ~= mode) 
+    and (xObservable.mode == xObservable.MODE.AUTOMATIC)
   then
     -- remove notifier
   end
 
-  if (mode == cObservable.MODE.AUTOMATIC) then
+  if (mode == xObservable.MODE.AUTOMATIC) then
     -- add notifier
   end
 
@@ -160,17 +168,17 @@ end
 -------------------------------------------------------------------------------
 -- get a specific type of observable 
 -- @param str_type, string ("boolean","number" or "string")
--- @param array, list of cObservable descriptors
+-- @param array, list of xObservable descriptors
 -- @return table or nil
 
-function cObservable.get_by_type(str_type,array)
+function xObservable.get_by_type(str_type,array)
 
-  if cObservable.SONG_BY_TYPE[str_type] then
-    return cObservable.SONG_BY_TYPE[str_type]
+  if xObservable.SONG_BY_TYPE[str_type] then
+    return xObservable.SONG_BY_TYPE[str_type]
   end
 
   if not array then
-    array = cObservable.SONG
+    array = xObservable.SONG
   end
 
   local t = {}
@@ -179,7 +187,7 @@ function cObservable.get_by_type(str_type,array)
       if type(v.type) ~= "nil" and (v.type == str_type) then
         t[k] = v
       else
-        t[k] = cObservable.get_by_type(str_type,v)
+        t[k] = xObservable.get_by_type(str_type,v)
       end
     end
   end
@@ -188,9 +196,9 @@ function cObservable.get_by_type(str_type,array)
 end
 
 -- precompute 
-cObservable.SONG_BY_TYPE["boolean"] = cObservable.get_by_type("boolean")
-cObservable.SONG_BY_TYPE["number"] = cObservable.get_by_type("number")
-cObservable.SONG_BY_TYPE["string"] = cObservable.get_by_type("string")
+xObservable.SONG_BY_TYPE["boolean"] = xObservable.get_by_type("boolean")
+xObservable.SONG_BY_TYPE["number"] = xObservable.get_by_type("number")
+xObservable.SONG_BY_TYPE["string"] = xObservable.get_by_type("string")
 
 -------------------------------------------------------------------------------
 -- combine the above search with a match for a given name
@@ -198,7 +206,7 @@ cObservable.SONG_BY_TYPE["string"] = cObservable.get_by_type("string")
 -- @param str_obs (string), e.g. "transport.keyboard_velocity_enabled_observable"
 -- @param str_prefix (string), e.g. "rns."
 
-function cObservable.get_by_type_and_name(str_type,str_obs,str_prefix)
+function xObservable.get_by_type_and_name(str_type,str_obs,str_prefix)
 
   -- strip away prefix
   if str_prefix then
@@ -208,7 +216,7 @@ function cObservable.get_by_type_and_name(str_type,str_obs,str_prefix)
     end
   end
 
-  local matches = cObservable.get_by_type(str_type)
+  local matches = xObservable.get_by_type(str_type)
 
   -- break string into segments
   local obs_parts = cString.split(str_obs,"%.")
@@ -236,10 +244,10 @@ end
 -- @param arr (table) supply observables (when we got them)
 -- @return table<string>
 
-function cObservable.get_keys_by_type(str_type,prefix,arr)
+function xObservable.get_keys_by_type(str_type,prefix,arr)
 
   if not arr then
-    arr = cObservable.get_by_type(str_type)
+    arr = xObservable.get_by_type(str_type)
   end
 
   if not prefix then
@@ -251,7 +259,7 @@ function cObservable.get_keys_by_type(str_type,prefix,arr)
     if type(v) == "table" then
       if not v.type then
         prefix = prefix..k.."."
-        local branch = cObservable.get_keys_by_type(str_type,prefix,v)
+        local branch = xObservable.get_keys_by_type(str_type,prefix,v)
         for k2,v2 in ipairs(branch) do
           table.insert(t,v2)
         end
@@ -275,10 +283,10 @@ end
 -- @return bool, true when attached
 -- @return string, error message when failed
 
-function cObservable.detach(obs,arg1,arg2)
+function xObservable.detach(obs,arg1,arg2)
 
   local err 
-  obs,err = cObservable.retrieve_observable(obs)
+  obs,err = xObservable.retrieve_observable(obs)
   if err then
     return false,err
   end
@@ -319,15 +327,15 @@ end
 -- @return bool, true when attached
 -- @return string, error message when failed
 
-function cObservable.attach(obs,arg1,arg2)
+function xObservable.attach(obs,arg1,arg2)
   
   local err = nil
-  obs,err = cObservable.retrieve_observable(obs)
+  obs,err = xObservable.retrieve_observable(obs)
   if err then
     return false,err
   end
 
-  cObservable.detach(obs,arg1,arg2)
+  xObservable.detach(obs,arg1,arg2)
 
   if type(arg1)=="function" then
     local fn,obj = arg1,arg2
@@ -352,7 +360,7 @@ end
 -- @param obs (string or ObservableXXX)
 -- @return ObservableXXX
 
-function cObservable.retrieve_observable(obs)
+function xObservable.retrieve_observable(obs)
 
   local err
   if (type(obs)=="string") then
@@ -368,8 +376,8 @@ end
 --------------------------------------------------------------------------------
 -- remove all entries from ObservableXXXList with specified value 
 
-function cObservable.list_remove(obs,val)
-  TRACE("cObservable.list_remove",obs,val)
+function xObservable.list_remove(obs,val)
+  TRACE("xObservable.list_remove",obs,val)
 
   for k = 1,#obs do
     if obs[k] and (val == obs[k].value) then
@@ -383,8 +391,8 @@ end
 --------------------------------------------------------------------------------
 -- add to ObservableXXXList when not already present
 
-function cObservable.list_add(obs,val)
-  TRACE("cObservable.list_add",obs,val)
+function xObservable.list_add(obs,val)
+  TRACE("xObservable.list_add",obs,val)
 
   local exists = false
   for k = 1,#obs do
@@ -402,7 +410,7 @@ end
 --------------------------------------------------------------------------------
 -- return table containing all names (using .dot syntax)
 
-function cObservable.get_song_names(prefix)
+function xObservable.get_song_names(prefix)
 
   local rslt = {}
   local branches = {"transport","sequencer"}
@@ -411,14 +419,14 @@ function cObservable.get_song_names(prefix)
     prefix = "rns." 
   end
 
-  for k,v in pairs(cObservable.SONG) do
+  for k,v in pairs(xObservable.SONG) do
     if not table.find(branches,k) then
       table.insert(rslt,prefix..k)
     end
   end
 
   for k,v in pairs(branches) do
-    for k2,v2 in pairs(cObservable.SONG[v]) do
+    for k2,v2 in pairs(xObservable.SONG[v]) do
       table.insert(rslt,prefix..v.."."..k2)
     end
   end
