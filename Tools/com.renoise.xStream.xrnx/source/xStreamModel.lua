@@ -128,7 +128,7 @@ function xStreamModel:__init(buffer,voicemgr,output_message)
 
   self.selected_preset_bank_index_observable:add_notifier(function()
     local preset_bank = self.selected_preset_bank
-    cObservable.attach(preset_bank.presets_observable,preset_observable_notifier)
+    xObservable.attach(preset_bank.presets_observable,preset_observable_notifier)
   end)
 
   --== initialize ==--
@@ -268,7 +268,7 @@ function xStreamModel:set_preset_bank_index(idx)
 
   -- attach_to_preset_bank
   local obs = self.selected_preset_bank.modified_observable
-  cObservable.attach(obs,self,self.handle_preset_changes)
+  xObservable.attach(obs,self,self.handle_preset_changes)
 
 end
 
@@ -1048,7 +1048,7 @@ local val = select(1,...)
 
       -- renoise event : add 
       if (parts[1] == "rns") then
-        local attached,err = cObservable.attach(k,self.events_compiled[k])
+        local attached,err = xObservable.attach(k,self.events_compiled[k])
         if not attached then
           LOG("*** Something went wrong while parsing notifier",k,err)
         end
@@ -1072,7 +1072,7 @@ function xStreamModel:remove_event_notifier(key)
   TRACE("xStreamModel:remove_event_notifier(key)",key)
 
   --print(">>> about to remove notifier",key,"from this model",self.name)
-  local detached,err = cObservable.detach(key,self.events_compiled[key])
+  local detached,err = xObservable.detach(key,self.events_compiled[key])
   if not detached then
     LOG("*** Something went wrong while parsing notifier",key,err)
   end

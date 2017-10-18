@@ -488,11 +488,11 @@ function xStreamUI:attach_to_member()
     self.stack_toolbar:update()
   end
 
-  cObservable.attach(member.input_observable,input_notifier)
-  cObservable.attach(member.input_status_observable,input_status_notifier)
-  cObservable.attach(member.output_observable,output_notifier)
-  cObservable.attach(member.output_status_observable,output_status_notifier)
-  cObservable.attach(member.scheduled_preset_index_observable,schedule_preset_notifier)
+  xObservable.attach(member.input_observable,input_notifier)
+  xObservable.attach(member.input_status_observable,input_status_notifier)
+  xObservable.attach(member.output_observable,output_notifier)
+  xObservable.attach(member.output_status_observable,output_status_notifier)
+  xObservable.attach(member.scheduled_preset_index_observable,schedule_preset_notifier)
 
   self.model_toolbar:update()
   self.stack_toolbar:update()
@@ -531,52 +531,52 @@ function xStreamUI:attach_to_model()
       self.build_presets_requested = true
       self.update_presets_requested = true
       local preset_bank = self.xstream.selected_model.selected_preset_bank
-      cObservable.attach(preset_bank.name_observable,preset_bank_notifier)
-      cObservable.attach(preset_bank.presets_observable,presets_modified_notifier)
-      cObservable.attach(preset_bank.modified_observable,presets_modified_notifier)
-      cObservable.attach(preset_bank.selected_preset_index_observable,preset_index_notifier)
+      xObservable.attach(preset_bank.name_observable,preset_bank_notifier)
+      xObservable.attach(preset_bank.presets_observable,presets_modified_notifier)
+      xObservable.attach(preset_bank.modified_observable,presets_modified_notifier)
+      xObservable.attach(preset_bank.selected_preset_index_observable,preset_index_notifier)
     end
 
-    cObservable.attach(model.name_observable,function()
+    xObservable.attach(model.name_observable,function()
       TRACE("xStreamUI - model.name_observable fired...")
       self.update_model_selector_requested = true
     end)
-    cObservable.attach(model.modified_observable,function()
+    xObservable.attach(model.modified_observable,function()
       TRACE("xStreamUI - model.modified_observable fired...")
       self.update_models_requested = true
     end)
-    cObservable.attach(model.color_observable,function()    
+    xObservable.attach(model.color_observable,function()    
       TRACE("xStreamUI - model.color_observable fired...")
       self.update_color_requested = true
     end)
-    cObservable.attach(model.args.selected_index_observable,function()
+    xObservable.attach(model.args.selected_index_observable,function()
       TRACE("xStreamUI - selected_arg_notifier fired...")
       self.update_args_requested = true
     end)
-    cObservable.attach(model.args.args_observable,function(arg)
+    xObservable.attach(model.args.args_observable,function(arg)
       TRACE("xStreamUI - args_observable_notifier fired...",rprint(arg))
       self.build_args_requested = true
     end)
-    cObservable.attach(model.args.modified_observable,function()
+    xObservable.attach(model.args.modified_observable,function()
       TRACE("xStreamUI - args_modified_notifier fired...")
       self.xstream.selected_model.modified = true
     end)
-    cObservable.attach(model.data_observable,function()
+    xObservable.attach(model.data_observable,function()
       TRACE("xStreamUI - data_observable fired...")
       self.update_editor_requested = true
     end)
-    cObservable.attach(model.events_observable,function()
+    xObservable.attach(model.events_observable,function()
       TRACE("xStreamUI - events_observable fired...")
       self.update_editor_requested = true
     end)
-    cObservable.attach(model.sandbox.callback_str_observable,function()
+    xObservable.attach(model.sandbox.callback_str_observable,function()
       TRACE("xStreamUI - sandbox.callback_notifier fired...")
       if not self.user_modified_callback then
         self.update_editor_requested = true
       end
     end)
-    cObservable.attach(model.preset_banks_observable,preset_bank_notifier)
-    cObservable.attach(model.selected_preset_bank_index_observable,preset_bank_index_notifier)
+    xObservable.attach(model.preset_banks_observable,preset_bank_notifier)
+    xObservable.attach(model.selected_preset_bank_index_observable,preset_bank_index_notifier)
     preset_bank_index_notifier()
 
     -- select first argument
@@ -724,7 +724,7 @@ end
 
 function xStreamUI:attach_to_song()
 
-  cObservable.attach(rns.transport.playing_observable,self,xStreamUI.update_play_button)
+  xObservable.attach(rns.transport.playing_observable,self,xStreamUI.update_play_button)
 
 end
 

@@ -428,9 +428,9 @@ function xStreamUIStackToolbar:attach_to_member()
   local member = self.xstream.stack:get_selected_member()
   --print(">>> member",member)
   if member then
-    cObservable.attach(member.model_index_observable,model_index_notifier)
-    cObservable.attach(member.input_observable,handle_member_changed)
-    cObservable.attach(member.output_observable,handle_member_changed)
+    xObservable.attach(member.model_index_observable,model_index_notifier)
+    xObservable.attach(member.input_observable,handle_member_changed)
+    xObservable.attach(member.output_observable,handle_member_changed)
   end
 
 end
@@ -447,7 +447,7 @@ function xStreamUIStackToolbar:attach_to_process()
   end
 
   local obs = self.xstream.stack.selected_member_index_observable
-  cObservable.attach(obs,handle_selected_member)
+  xObservable.attach(obs,handle_selected_member)
 
   self:attach_to_member()
 

@@ -452,7 +452,7 @@ function xStreamUIArgsEditor:create_arg_descriptor(arg_index,arg_value)
   if (view_bop.value == 2) then
     arg_bind = view_bop_value.text
     if (arg_bind == "") then
-      local keys = table.concat(cObservable.get_keys_by_type(str_type,"rns."),"\n")
+      local keys = table.concat(xObservable.get_keys_by_type(str_type,"rns."),"\n")
       return false, ("Error: 'bind' needs an observable property, try one of these: \n%s"):format(keys)
     end
   elseif (view_bop.value == 3) then
@@ -656,7 +656,7 @@ function xStreamUIArgsEditor:update()
     return
   end
   
-  -- TODO deduce valid range from all known renoise observables (cObservable)
+  -- TODO deduce valid range from all known renoise observables (xObservable)
   if (view_poll_or_bind.value == 1) then
     view_min_value.active = true
   else

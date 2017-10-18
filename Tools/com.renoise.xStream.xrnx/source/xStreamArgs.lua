@@ -200,7 +200,7 @@ function xStreamArgs:add(arg,index,do_replace)
       return false,err
     end
     -- when bound, enforce the target min & max 
-    local obs = cObservable.get_by_type_and_name(type(arg.value),arg.bind,"rns.")
+    local obs = xObservable.get_by_type_and_name(type(arg.value),arg.bind,"rns.")
     arg.properties.min = obs.min or arg.properties.min
     arg.properties.max = obs.max or arg.properties.max
     -- (TODO add dummy entries to lists)
@@ -362,9 +362,9 @@ end
 function xStreamArgs:is_valid_bind_value(bind,str_type)
   TRACE("xStreamArgs:is_valid_bind_value(bind,str_type)",bind,str_type)
 
-  local matched = cObservable.get_by_type_and_name(str_type,bind,"rns.")
+  local matched = xObservable.get_by_type_and_name(str_type,bind,"rns.")
   if not matched then
-    local keys = table.concat(cObservable.get_keys_by_type(str_type,"rns."),"\n")
+    local keys = table.concat(xObservable.get_keys_by_type(str_type,"rns."),"\n")
     return false,("Invalid/unsupported observable property '%s', try one of these: \n%s"):format(bind,keys)
   end
   return true

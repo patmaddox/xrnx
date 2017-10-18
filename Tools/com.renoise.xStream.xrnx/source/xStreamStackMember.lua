@@ -359,14 +359,14 @@ function xStreamStackMember:_attach_to_model()
   local preset_bank_notifier = function()
     TRACE("xStreamModels - selected_preset_bank_index_observable fired..")
     local preset_bank = self.model.selected_preset_bank
-    cObservable.attach(preset_bank.modified_observable,presets_modified_notifier)
-    cObservable.attach(preset_bank.selected_preset_index_observable,preset_index_notifier)
+    xObservable.attach(preset_bank.modified_observable,presets_modified_notifier)
+    xObservable.attach(preset_bank.selected_preset_index_observable,preset_index_notifier)
   end
 
-  cObservable.attach(self.model.name_observable,name_notifier)
-  cObservable.attach(self.model.on_rebuffer,rebuffer_notifier)
-  cObservable.attach(self.model.compiled_observable,compiled_notifier)
-  cObservable.attach(self.model.selected_preset_bank_index_observable,preset_bank_notifier)
+  xObservable.attach(self.model.name_observable,name_notifier)
+  xObservable.attach(self.model.on_rebuffer,rebuffer_notifier)
+  xObservable.attach(self.model.compiled_observable,compiled_notifier)
+  xObservable.attach(self.model.selected_preset_bank_index_observable,preset_bank_notifier)
   preset_bank_notifier()
   
   compiled_notifier()

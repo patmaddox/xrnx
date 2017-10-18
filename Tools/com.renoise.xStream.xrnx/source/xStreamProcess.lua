@@ -721,7 +721,7 @@ function xStreamProcess:attach_to_model()
     self:recompute()
   end 
 
-  cObservable.attach(self.models.selected_model.compiled_observable,compiled_notifier)
+  xObservable.attach(self.models.selected_model.compiled_observable,compiled_notifier)
   
   compiled_notifier()
 

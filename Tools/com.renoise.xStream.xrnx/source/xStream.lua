@@ -209,7 +209,7 @@ function xStream:__init(...)
     --print("xStream - app_new_document_observable fired...")
     self:attach_to_song()
     if self.prefs.persist_state then 
-      local has_song_settings = xSongSettings.test(xStream.TOKEN_START,xStream.TOKEN_END)
+      local has_song_settings = xPersistentSettings.test(xStream.TOKEN_START,xStream.TOKEN_END)
       if has_song_settings then
         -- when current model is modified, 
         -- prompt before recalling stack...
@@ -360,7 +360,7 @@ end
 function xStream:select_launch_model()
   TRACE("xStream:select_launch_model()")
 
-  local has_saved_state = xSongSettings.test(xStream.TOKEN_START,xStream.TOKEN_END)
+  local has_saved_state = xPersistentSettings.test(xStream.TOKEN_START,xStream.TOKEN_END)
   --print(">>> has_saved_state",has_saved_state)
   if has_saved_state then 
     self:recall_state()
@@ -383,7 +383,7 @@ end
 function xStream:recall_state()
   TRACE("xStream:recall_state()")
 
-  local rslt = xSongSettings.retrieve(xStream.TOKEN_START,xStream.TOKEN_END)
+  local rslt = xPersistentSettings.retrieve(xStream.TOKEN_START,xStream.TOKEN_END)
   --print(">>> recall_state - rslt...",rprint(rslt))
   if rslt then 
     self.stack:apply_definition(rslt)
@@ -403,13 +403,13 @@ function xStream:save_state()
 
   if not self.stack:contains_model() then
     -- clear 
-    xSongSettings.clear(xStream.TOKEN_START,xStream.TOKEN_END)
+    xPersistentSettings.clear(xStream.TOKEN_START,xStream.TOKEN_END)
   else
     -- save current stack
     local rslt = self.stack:get_definition()
     rslt.version = xStream.API_VERSION
     --rprint(rslt)
-    xSongSettings.store(rslt,xStream.TOKEN_START,xStream.TOKEN_END)
+    xPersistentSettings.store(rslt,xStream.TOKEN_START,xStream.TOKEN_END)
   
   end
 
@@ -577,9 +577,9 @@ function xStream:attach_to_song()
 
   end
 
-  cObservable.attach(rns.transport.playing_observable,playing_notifier)
-  cObservable.attach(rns.transport.edit_mode_observable,edit_notifier)
-  cObservable.attach(rns.selected_track_index_observable,selected_track_index_notifier)
+  xObservable.attach(rns.transport.playing_observable,playing_notifier)
+  xObservable.attach(rns.transport.edit_mode_observable,edit_notifier)
+  xObservable.attach(rns.selected_track_index_observable,selected_track_index_notifier)
 
   playing_notifier()
   edit_notifier()

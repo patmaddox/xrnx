@@ -540,10 +540,10 @@ function xStreamStack:set_member(idx,member)
     -- don't export this one 
   --end
 
-  cObservable.attach(member.model_index_observable,model_index_notifier)
-  cObservable.attach(member.input_observable,input_notifier)
-  cObservable.attach(member.output_observable,output_notifier)
-  --cObservable.attach(member.buffer.active_observable,active_observable)
+  xObservable.attach(member.model_index_observable,model_index_notifier)
+  xObservable.attach(member.input_observable,input_notifier)
+  xObservable.attach(member.output_observable,output_notifier)
+  --xObservable.attach(member.buffer.active_observable,active_observable)
 
   if (idx == self.selected_member_index) then 
     -- select the model 
